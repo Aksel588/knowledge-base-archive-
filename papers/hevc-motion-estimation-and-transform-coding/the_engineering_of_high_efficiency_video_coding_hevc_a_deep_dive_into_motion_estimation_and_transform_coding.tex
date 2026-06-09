@@ -1,0 +1,216 @@
+\documentclass[11pt,journal,onecolumn]{IEEEtran}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{bm}
+
+\begin{document}
+
+\title{The Engineering of High-Efficiency Video Coding (HEVC): A Deep Dive into Motion Estimation and Transform Coding}
+
+\author{Aksel Aghajanyan \\ \small Technical Report --- Knowledge Base Archive}
+
+\maketitle
+
+\begin{abstract}
+High Efficiency Video Coding (HEVC), standardized as ITU-T H.265 and ISO/IEC 23008-2 (MPEG-H Part~2), achieves substantial bitrate reduction not through generic file shrinking but through a tightly coupled pipeline of inter-frame prediction and residual coding. The encoder exploits spatiotemporal redundancy by motion-compensating blocks from previously decoded reference pictures, transmits only the prediction error (the residual), and represents that residual compactly in the transform domain via the Discrete Cosine Transform (DCT) or, in selected intra modes, the Discrete Sine Transform (DST). Quantization and context-adaptive binary arithmetic coding (CABAC) further concentrate information into a minimal bitstream. This report provides a mathematically grounded exposition of motion estimation, transform coding, and temporal prediction---the three pillars that distinguish modern video compression from naive storage reduction.
+\end{abstract}
+
+\section{Introduction}
+A widespread misconception treats video compression as synonymous with ``making a file smaller''---as though codecs were lossless archivers applied to arbitrary byte streams. In reality, video compression is a branch of \textbf{predictive signal processing}: the encoder models the statistical structure of a spatiotemporal luminance--chrominance field and transmits only what the decoder cannot infer from prior information and transmitted parameters.
+
+A digital video sequence may be represented as a function $I(x, y, t)$ over spatial coordinates $(x, y)$ and time $t$. Adjacent frames exhibit strong \textbf{temporal correlation}: static backgrounds persist unchanged, and camera or object motion induces structured displacement rather than independent pixel redraws. Modern codecs such as HEVC formalize this insight by partitioning each frame into blocks, predicting each block from spatial neighbors (intra prediction) or from displaced regions of reference frames (inter prediction), and coding the resulting \textbf{residual}---the difference between the original block and its predictor.
+
+HEVC, ratified in 2013, extends its predecessor H.264/AVC through a flexible Coding Tree Unit (CTU) hierarchy (up to $64 \times 64$ pixels), advanced fractional-pel motion compensation, richer intra and inter prediction modes, and mode-dependent transform selection. The standard does not shrink files; it engineers a \textbf{rate--distortion optimal representation} of a continuous visual signal under perceptual and bandwidth constraints.
+
+This report unfolds the mathematical foundations of motion estimation, the transform coding pipeline applied to residuals, and the logic of inter-frame temporal redundancy reduction that together define HEVC's compression architecture.
+
+---
+
+\section{Mathematical Foundations of Motion Estimation}
+
+\subsection{Block-Based Prediction and the Motion Vector}
+HEVC partitions a frame into Prediction Units (PUs) of varying size, nested within Coding Units (CUs) inside CTUs. For inter prediction, a current block $\mathbf{B}_t$ at display time $t$ is approximated by a displaced copy of a reference block $\hat{\mathbf{B}}_{t'}$ drawn from a previously decoded picture at time $t'$.
+
+Let $\mathbf{B}_t \in \mathbb{R}^{M \times N}$ denote the $M \times N$ array of luma (or chroma) samples in the current PU. The motion vector
+\begin{equation}
+\mathbf{v} = (v_x, v_y) \in \mathbb{Z}^2 \text{ (or } \mathbb{Q}^2 \text{ for fractional precision)}
+\end{equation}
+specifies the displacement from the current block's top-left corner to the corresponding location in the reference frame. The motion-compensated predictor is
+\begin{equation}
+\hat{B}_t(i, j) = \mathrm{Interp}\!\left(\mathrm{Ref}_{t'},\, i + v_x,\, j + v_y\right), \quad 0 \le i < M,\; 0 \le j < N
+\end{equation}
+where $\mathrm{Interp}(\cdot)$ denotes sub-pixel interpolation (typically separable 8-tap or 4-tap filters in HEVC) when $(v_x, v_y)$ are non-integer.
+
+\subsection{The Residual Signal}
+Once a predictor is selected, the encoder forms the \textbf{residual block}
+\begin{equation}
+\mathbf{R} = \mathbf{B}_t - \hat{\mathbf{B}}_{t'}(\mathbf{v})
+\end{equation}
+or equivalently, entrywise:
+\begin{equation}
+R(i, j) = B_t(i, j) - \hat{B}_{t'}(i + v_x, j + v_y), \quad \forall\, (i, j) \in \mathcal{P}
+\end{equation}
+where $\mathcal{P}$ is the set of pixel indices within the PU. The residual $\mathbf{R}$ is the signal actually subjected to transform coding; its energy is typically far lower than that of $\mathbf{B}_t$ when temporal prediction succeeds.
+
+\subsection{Block Distortion Measures}
+To select $\mathbf{v}$, the encoder evaluates a \textbf{block distortion} functional over a search space $\mathcal{S}$ of candidate vectors. The Sum of Absolute Differences (SAD) is defined as
+\begin{equation}
+\mathrm{SAD}(\mathbf{v}) = \sum_{i=0}^{M-1} \sum_{j=0}^{N-1} \left| B_t(i, j) - \hat{B}_{t'}(i + v_x, j + v_y) \right|
+\end{equation}
+The Sum of Squared Differences (SSD), which aligns with mean-squared-error distortion, is
+\begin{equation}
+\mathrm{SSD}(\mathbf{v}) = \sum_{i=0}^{M-1} \sum_{j=0}^{N-1} \left( B_t(i, j) - \hat{B}_{t'}(i + v_x, j + v_y) \right)^2
+\end{equation}
+SSD penalizes large errors more heavily and is often used in rate--distortion optimization; SAD is computationally cheaper and widely employed in fast search heuristics.
+
+\subsection{Rate--Distortion Motion Search}
+The optimal motion vector balances prediction fidelity against the bit cost of encoding $\mathbf{v}$ and associated syntax:
+\begin{equation}
+\mathbf{v}^* = \arg\min_{\mathbf{v} \in \mathcal{S}} \; D(\mathbf{v}) + \lambda \, R(\mathbf{v})
+\end{equation}
+where $D(\mathbf{v})$ is a distortion measure (e.g., SSD or a perceptually weighted variant), $R(\mathbf{v})$ is the estimated number of bits to signal the motion vector and mode, and $\lambda > 0$ is a Lagrange multiplier controlling the rate--distortion tradeoff.
+
+\subsection{HEVC Partitioning and Search Complexity}
+HEVC supports PU sizes from $4 \times 4$ to $64 \times 64$ luma samples, asymmetric partitions, merge modes (reusing motion data from spatial neighbors), and skip modes (zero residual, motion-only). For a $64 \times 64$ CTU with quarter-pel precision over a $\pm 128$ pixel search window, exhaustive evaluation is computationally prohibitive ($\mathcal{O}(W^2 \cdot |\mathcal{S}|)$ per block).
+
+Production encoders therefore employ \textbf{hierarchical search}: coarse integer-pel search on downsampled references, refined sub-pel search via gradient or parabolic interpolation, Test Zone (TZ) search with early termination, and motion-vector predictors (MVP) that center the search near likely optima. The decoder receives only $\mathbf{v}^*$ and mode indices; it never performs search.
+
+\subsection{Fractional-Pel Interpolation}
+For half- and quarter-pel positions, HEVC applies separable one-dimensional filters. Let $h[k]$ be an 8-tap interpolation filter. The horizontally interpolated sample at fractional position $x + \delta$ is
+\begin{equation}
+\hat{s}(x + \delta, y) = \sum_{k} h[k] \cdot \mathrm{Ref}(x + k - 3 + \delta, y)
+\end{equation}
+Vertical interpolation follows analogously. Separability reduces complexity from $\mathcal{O}(K^2)$ to $2\mathcal{O}(K)$ per output sample while maintaining sufficient frequency response for sub-pel accuracy.
+
+---
+
+\section{The Transform Coding Pipeline}
+
+After motion compensation, the residual block $\mathbf{R}$ is transformed into the frequency domain, quantized, and entropy-coded. This pipeline---prediction $\rightarrow$ residual $\rightarrow$ transform $\rightarrow$ quantization $\rightarrow$ entropy coding---is the canonical structure of transform-based video codecs.
+
+\subsection{Two-Dimensional Separable DCT}
+HEVC applies a type-II Discrete Cosine Transform (DCT-II) to most residual blocks. For an $N \times N$ block, the forward 2D DCT is implemented as separable 1D transforms along rows and columns. The one-dimensional forward DCT of length $N$ is
+\begin{equation}
+C(u) = \alpha_u \sum_{x=0}^{N-1} R(x) \cos\!\left( \frac{(2x + 1)\, u\, \pi}{2N} \right), \quad u = 0, 1, \ldots, N-1
+\end{equation}
+where $\alpha_0 = \sqrt{1/N}$ and $\alpha_u = \sqrt{2/N}$ for $u > 0$. The full 2D transform coefficient at frequency indices $(u, v)$ is
+\begin{equation}
+C(u, v) = \alpha_u \alpha_v \sum_{x=0}^{N-1} \sum_{y=0}^{N-1} R(x, y) \cos\!\left( \frac{(2x+1)u\pi}{2N} \right) \cos\!\left( \frac{(2y+1)v\pi}{2N} \right)
+\end{equation}
+The DC coefficient $C(0, 0)$ captures the block mean; higher-index coefficients represent horizontal, vertical, and diagonal spatial frequency content.
+
+\subsection{DST-VII for $4 \times 4$ Intra Luma Residuals}
+For $4 \times 4$ luma intra prediction residuals, HEVC selects the type-VII Discrete Sine Transform (DST-VII) rather than DCT-II, as empirical studies showed improved energy compaction for the specific boundary conditions induced by intra prediction. The 1D DST-VII basis functions are sine-based; the 2D transform is again applied separably. Inter prediction residuals at all block sizes use DCT-II exclusively.
+
+\subsection{Inverse Transform and Reconstruction}
+The decoder applies the inverse DCT (or inverse DST) to dequantized coefficients $\hat{C}(u, v)$ to recover the spatial residual:
+\begin{equation}
+\hat{R}(x, y) = \sum_{u=0}^{N-1} \sum_{v=0}^{N-1} \alpha_u \alpha_v \, \hat{C}(u, v) \cos\!\left( \frac{(2x+1)u\pi}{2N} \right) \cos\!\left( \frac{(2y+1)v\pi}{2N} \right)
+\end{equation}
+The reconstructed block is then
+\begin{equation}
+\tilde{B}_t(i, j) = \hat{B}_t(i, j) + \hat{R}(i, j)
+\end{equation}
+where $\hat{B}_t$ is the motion-compensated predictor and $\tilde{B}_t$ is stored in the decoded picture buffer for use as a future reference.
+
+\subsection{Quantization}
+Transform coefficients are quantized to reduce precision and bitrate. For coefficient index $k$,
+\begin{equation}
+Q(k) = \mathrm{round}\!\left( \frac{C(k)}{Q_{\mathrm{step}}(k)} \right)
+\end{equation}
+where $Q_{\mathrm{step}}(k)$ depends on the Quantization Parameter (QP) and, in HEVC, a scaling matrix that may vary with transform block size and prediction type. Dequantization at the decoder is
+\begin{equation}
+\hat{C}(k) = Q(k) \cdot Q_{\mathrm{step}}(k)
+\end{equation}
+Quantization is the primary source of loss in lossy compression; coarser quantization yields fewer nonzero coefficients and lower bitrate at the cost of increased distortion.
+
+\subsection{Entropy Coding with CABAC}
+Quantized coefficients and syntax elements (motion vectors, partition modes, reference indices) are encoded using Context-Adaptive Binary Arithmetic Coding (CABAC). CABAC adaptively estimates symbol probabilities from context (neighboring coded data), achieving typically 10--20\% bitrate savings over its predecessor CAVLC. The significance map (which coefficients are nonzero), coefficient levels, and sign bits are coded in a scan order that groups energy into early positions, improving run-length efficiency.
+
+\subsection{Pipeline Summary}
+The end-to-end transform coding path for an inter-coded block may be summarized as:
+\begin{enumerate}
+    \item \textbf{Inter prediction:} form $\hat{\mathbf{B}}_t$ from reference frame(s) via motion compensation.
+    \item \textbf{Residual:} compute $\mathbf{R} = \mathbf{B}_t - \hat{\mathbf{B}}_t$.
+    \item \textbf{Transform:} apply 2D DCT-II (or DST-VII for $4 \times 4$ intra luma) to $\mathbf{R}$.
+    \item \textbf{Quantization:} map $C(k) \mapsto Q(k)$ with QP-dependent step sizes.
+    \item \textbf{Entropy coding:} CABAC-encode $Q(k)$, motion parameters, and mode syntax into the bitstream.
+\end{enumerate}
+The decoder inverts this chain: parse bitstream $\rightarrow$ dequantize $\rightarrow$ inverse transform $\rightarrow$ add predictor $\rightarrow$ store reconstructed picture.
+
+---
+
+\section{Inter-Frame Prediction}
+
+\subsection{Temporal Redundancy and the Prediction Paradigm}
+Consecutive frames in a video sequence are not independent draws from a pixel distribution. Static scene content repeats identically across frames; moving objects induce coherent displacement fields rather than random pixel changes. \textbf{Inter-frame prediction} exploits this temporal redundancy by allowing the encoder to reference one or more previously decoded pictures when coding the current frame.
+
+Formally, let $I_t(x, y)$ denote the true luma value at frame $t$. If a region undergoes pure translational motion with displacement $\mathbf{v}$, then approximately
+\begin{equation}
+I_t(x, y) \approx I_{t'}(x - v_x, y - v_y)
+\end{equation}
+The residual after motion compensation,
+\begin{equation}
+R(x, y) = I_t(x, y) - \hat{I}_{t'}(x - v_x, y - v_y)
+\end{equation}
+is sparse and low-energy for large regions of the frame, making it highly amenable to transform coding.
+
+\subsection{Reference Picture Management}
+HEVC maintains a \textbf{Decoded Picture Buffer (DPB)} containing previously reconstructed frames available for prediction. Each picture is assigned a Picture Order Count (POC) that defines display order, which may differ from decoding order (especially for B-slices). Reference picture lists $\mathrm{Ref}_0$ and $\mathrm{Ref}_1$ are signaled in the slice header; the encoder selects which reference indices and motion vectors minimize rate--distortion cost.
+
+\subsection{Slice Types and Prediction Modes}
+\begin{itemize}
+    \item \textbf{I-slices} use only intra prediction (spatial neighbors within the same frame). No temporal reference is permitted.
+    \item \textbf{P-slices} use uni-directional inter prediction from a single reference list.
+    \item \textbf{B-slices} use bi-directional prediction, combining predictors from past and future reference pictures.
+\end{itemize}
+
+For uni-directional inter prediction, the predictor is
+\begin{equation}
+\hat{B}_t = P(\mathrm{Ref}, \mathbf{v})
+\end{equation}
+where $P(\cdot, \mathbf{v})$ denotes motion-compensated fetch from the reference picture at displacement $\mathbf{v}$.
+
+For bi-directional prediction, HEVC forms a weighted combination:
+\begin{equation}
+\hat{B}_t = w_0 \, P(\mathrm{Ref}_0, \mathbf{v}_0) + w_1 \, P(\mathrm{Ref}_1, \mathbf{v}_1)
+\end{equation}
+where $w_0, w_1$ are weighting factors (default $w_0 = w_1 = \tfrac{1}{2}$, or explicitly signaled for weighted prediction). Bi-prediction is especially effective for regions visible in both a past and future anchor frame, such as uncovered background revealed after object motion.
+
+\subsection{Weighted Prediction}
+Illumination changes between frames---fade-in, fade-out, or exposure adjustment---violate the assumption that $I_t \approx I_{t'}$ under pure displacement. HEVC supports \textbf{explicit weighted prediction}, where the predictor is scaled and offset:
+\begin{equation}
+\hat{B}_t(i, j) = w \cdot P(\mathrm{Ref}, \mathbf{v})(i, j) + o
+\end{equation}
+with signaled weight $w$ and offset $o$, improving prediction for gradual luminance transitions.
+
+\subsection{In-Loop Filtering}
+Reconstructed blocks are filtered before insertion into the DPB to improve the quality of future reference pictures. HEVC applies \textbf{deblocking filtering} along block and transform boundaries to reduce blocking artifacts, followed by \textbf{Sample Adaptive Offset (SAO)}---a per-CTU band or edge offset that corrects systematic reconstruction bias. Because filtering occurs inside the encoding--decoding loop, encoder and decoder maintain identical reference pictures, ensuring drift-free prediction chains.
+
+\subsection{Why Temporal Prediction Dominates Bitrate Savings}
+Empirically, inter-coded P- and B-slices account for the majority of bitrate reduction relative to intra-only coding. A typical 1080p frame at 30\,fps contains $\sim 2$ million luma samples per frame; transmitting each independently would require enormous bitrate. Motion compensation reduces the entropy of the signal prior to transform coding: residuals concentrate energy in low-frequency DCT coefficients, and quantization zeros out high-frequency detail that is perceptually insignificant. This is the engineering reality behind ``video compression''---not file shrinking, but \textbf{exploitation of spatiotemporal statistical structure}.
+
+---
+
+\section{Conclusion}
+High Efficiency Video Coding embodies a mature synthesis of motion-compensated prediction, transform-domain residual representation, and entropy-constrained quantization. Its encoder performs an extraordinarily complex search over partition hierarchies, prediction modes, motion vectors, transform sizes, and quantization parameters---a combinatorial optimization whose computational cost is \textbf{orders of magnitude} greater than decoding. The decoder, by design, executes only the inverse operations specified in the bitstream: parse syntax, fetch reference blocks, inverse transform, dequantize, and filter. This asymmetry is intentional and enables real-time playback on consumer hardware while permitting offline or server-side encoding with unbounded search depth.
+
+Despite the emergence of successor standards---Versatile Video Coding (VVC, H.266) and royalty-free alternatives such as AV1---HEVC remains deeply embedded in broadcast infrastructure, 4K streaming platforms, surveillance systems, and archival pipelines. Its widespread hardware decode support, mature encoder ecosystems, and well-understood rate--distortion characteristics sustain its relevance for high-fidelity video delivery at scale.
+
+The enduring lesson of HEVC is that modern video compression is a discipline of \textbf{signal prediction}: the codec does not compress files; it models a continuous spatiotemporal field, transmits what cannot be predicted, and represents that remainder efficiently in the transform domain. Motion estimation and transform coding are not ancillary features---they are the mathematical and engineering core of the standard.
+
+\begin{thebibliography}{3}
+\bibitem{h265}
+ITU-T Recommendation H.265, ``High Efficiency Video Coding,'' Apr. 2013.
+\bibitem{sullivan2012}
+G. J. Sullivan, J.-R. Ohm, W.-J. Han, and T. Wiegand, ``Overview of the High Efficiency Video Coding (HEVC) Standard,'' \textit{IEEE Transactions on Circuits and Systems for Video Technology}, vol. 22, no. 12, pp. 1649--1668, Dec. 2012.
+\bibitem{wiegand2003}
+T. Wiegand, G. J. Sullivan, G. J. Bj{\o}ntegaard, and A. Luthra, ``Overview of the H.264/AVC Video Coding Standard,'' \textit{IEEE Transactions on Circuits and Systems for Video Technology}, vol. 13, no. 7, pp. 560--576, Jul. 2003.
+\end{thebibliography}
+
+\end{document}
