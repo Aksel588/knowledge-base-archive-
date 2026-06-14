@@ -1,0 +1,215 @@
+\documentclass[11pt,journal,onecolumn]{IEEEtran}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{bm}
+
+\begin{document}
+
+\title{CPU vs.\ GPU: A Comparative Analysis of Architecture, Parallelism, and Workload Fit}
+
+\author{Aksel Aghajanyan \\ \small Technical Report --- Knowledge Base Archive}
+
+\maketitle
+
+\begin{abstract}
+Central Processing Units (CPUs) and Graphics Processing Units (GPUs) represent two distinct answers to the question of how silicon should be organized to execute computations efficiently. CPUs optimize for low-latency, general-purpose execution on irregular, branch-heavy workloads through a small number of powerful cores, deep cache hierarchies, and sophisticated control logic. GPUs optimize for high-throughput execution on data-parallel workloads through thousands of lightweight cores organized in Single-Instruction, Multiple-Thread (SIMT) groups, massive memory bandwidth, and latency-hiding schedulers. This report provides a mathematically grounded comparison of CPU and GPU architectures, parallelism models, memory subsystems, and the workload characteristics that determine which processor class---or which hybrid partitioning---delivers superior performance.
+\end{abstract}
+
+\section{Introduction}
+The phrase ``run it on the GPU'' has become commonplace in machine learning, scientific computing, and real-time graphics. Yet the choice between CPU and GPU execution is not a matter of universal acceleration: it is an engineering decision grounded in \textbf{workload structure}, \textbf{memory access patterns}, and \textbf{parallelism granularity}.
+
+A CPU is designed as a \textbf{latency-optimized} processor. Its cores execute complex instruction streams with unpredictable branches, pointer chasing, and frequent synchronization. A GPU is designed as a \textbf{throughput-optimized} processor. Its cores execute the same instruction across large arrays of data elements, tolerating long memory latencies by switching among thousands of resident threads.
+
+Confusion arises when practitioners treat GPUs as ``faster CPUs.'' They are not interchangeable. A sequential algorithm with poor data parallelism may execute \emph{slower} on a GPU than on a modern CPU due to kernel launch overhead, PCIe transfer costs, and occupancy limitations. Conversely, dense matrix multiplication, convolution, ray tracing, and particle simulations routinely achieve order-of-magnitude speedups on GPUs because their arithmetic intensity and regular memory access patterns align with the GPU execution model.
+
+This report compares CPU and GPU architectures across four axes: core organization and control flow, parallelism and scaling laws, memory hierarchy and bandwidth, and workload fit criteria including the roofline performance model.
+
+---
+
+\section{Architectural Foundations}
+
+\subsection{CPU: Latency-Optimized General-Purpose Cores}
+A modern CPU die allocates substantial area to features that minimize per-thread latency:
+\begin{itemize}
+    \item \textbf{Few powerful cores} (typically 8--64 on consumer and server parts), each capable of superscalar, out-of-order execution at 3--5\,GHz.
+    \item \textbf{Deep cache hierarchy} --- private L1/L2 caches per core, shared L3, and hardware prefetchers that hide DRAM latency for sequential and strided access.
+    \item \textbf{Branch prediction and speculative execution} --- critical for code with conditional logic, virtual function calls, and irregular control flow.
+    \item \textbf{Low-latency interconnect} between cores, memory controllers, and I/O subsystems.
+\end{itemize}
+
+The CPU execution model is best described as \textbf{Multiple-Instruction, Multiple-Data (MIMD)}: independent threads may follow entirely different instruction paths. This generality makes the CPU the default host for operating systems, databases, web servers, compilers, and any workload dominated by serial or fine-grained irregular parallelism.
+
+\subsection{GPU: Throughput-Optimized Streaming Processors}
+A modern GPU die inverts the CPU design priorities:
+\begin{itemize}
+    \item \textbf{Thousands of simple cores} grouped into Streaming Multiprocessors (SMs) or Compute Units (CUs), clocked at 1--2\,GHz.
+    \item \textbf{SIMT execution} --- threads are scheduled in \textbf{warps} (NVIDIA, 32 threads) or \textbf{wavefronts} (AMD, 64 threads) that share a program counter at instruction issue; divergence is handled via masking.
+    \item \textbf{Massive register files and shared memory} per SM, enabling many warps to remain resident simultaneously.
+    \item \textbf{High-bandwidth memory (HBM or GDDR)} with aggregate throughput exceeding 1\,TB/s on datacenter accelerators, at the cost of higher access latency than CPU DRAM paths.
+\end{itemize}
+
+GPUs were originally architected for rasterization and shading pipelines---embarrassingly parallel workloads over millions of pixels. General-purpose GPU (GPGPU) computing, formalized by CUDA (2007) and OpenCL, repurposed this hardware for linear algebra, FFTs, Monte Carlo simulation, and neural network training.
+
+\subsection{Design Philosophy in One Equation}
+Let $P$ denote peak compute throughput (FLOP/s), $f$ clock frequency, $C$ core count, and $I$ instructions per cycle per core. Roughly:
+\begin{equation}
+P_{\mathrm{CPU}} \approx f_{\mathrm{CPU}} \cdot C_{\mathrm{CPU}} \cdot I_{\mathrm{CPU}}, \quad I_{\mathrm{CPU}} \gg I_{\mathrm{GPU}}
+\end{equation}
+\begin{equation}
+P_{\mathrm{GPU}} \approx f_{\mathrm{GPU}} \cdot C_{\mathrm{GPU}} \cdot I_{\mathrm{GPU}}, \quad C_{\mathrm{GPU}} \gg C_{\mathrm{CPU}}
+\end{equation}
+CPUs win on $I$ (IPC, instruction-level parallelism per core); GPUs win on $C$ (core count). Neither dominates universally---the winning architecture depends on whether the workload can supply enough independent work to saturate $C_{\mathrm{GPU}}$.
+
+---
+
+\section{Parallelism Models and Scaling Laws}
+
+\subsection{Data Parallelism and SIMT}
+A data-parallel kernel maps $N$ independent work items to $N$ threads. On a GPU, thread $i$ computes:
+\begin{equation}
+y[i] = f(x[i]), \quad i \in \{0, 1, \ldots, N-1\}
+\end{equation}
+When $f$ is identical across all $i$ and branch divergence is minimal, SIMT hardware issues one instruction for an entire warp, amortizing decode and dispatch overhead across 32 threads.
+
+\textbf{Warp divergence} occurs when threads within a warp take different branches:
+\begin{equation}
+y[i] = \begin{cases} f_1(x[i]) & \text{if } c[i] \\ f_2(x[i]) & \text{otherwise} \end{cases}
+\end{equation}
+The hardware serializes the taken paths, reducing effective throughput. CPUs handle divergent branches natively via branch prediction; GPUs penalize them heavily.
+
+\subsection{Amdahl's Law}
+For a program with serial fraction $s$ and parallel fraction $p = 1 - s$, speedup on $N$ processors is bounded by:
+\begin{equation}
+S(N) = \frac{1}{s + \frac{p}{N}} \xrightarrow[N \to \infty]{} \frac{1}{s}
+\end{equation}
+Even a small serial section ($s = 0.01$) caps speedup at $100\times$ regardless of GPU size. CPU code paths for setup, I/O, reduction, and host-side orchestration often constitute this serial fraction. Hybrid CPU--GPU pipelines must minimize $s$ through batching, asynchronous transfers, and overlapping compute with data movement.
+
+\subsection{Gustafson's Law}
+For scaled problems where parallel work grows with processor count:
+\begin{equation}
+S(N) = N - s \cdot (N - 1)
+\end{equation}
+Large-batch neural network training exemplifies Gustafson scaling: increasing GPU count permits larger minibatches and bigger models, partially offsetting serial overhead. The applicable law depends on whether problem size is \textbf{fixed} (Amdahl) or \textbf{scaled} (Gustafson).
+
+\subsection{Occupancy and Latency Hiding}
+GPU throughput requires sufficient \textbf{occupancy} --- the ratio of active warps to maximum supported warps per SM. If a kernel stalls on memory (high latency $L_{\mathrm{mem}}$), the scheduler hides latency only if enough other warps are ready:
+\begin{equation}
+\text{Effective throughput} \propto \min\!\left(P_{\mathrm{peak}},\; \frac{B_{\mathrm{mem}}}{\mathrm{AI}}\right)
+\end{equation}
+where $B_{\mathrm{mem}}$ is memory bandwidth and $\mathrm{AI}$ is arithmetic intensity (FLOP per byte transferred). Low-occupancy kernels with irregular memory access fail to hide latency and underutilize the device.
+
+---
+
+\section{Memory Hierarchy and Data Movement}
+
+\subsection{CPU Memory Subsystem}
+CPUs prioritize \textbf{low latency}. Typical hierarchy:
+\begin{enumerate}
+    \item L1 cache ($\sim$1\,ns, 32--64\,KB per core)
+    \item L2 cache ($\sim$3--10\,ns, 256\,KB--1\,MB per core)
+    \item L3 cache ($\sim$10--40\,ns, 8--64\,MB shared)
+    \item DRAM ($\sim$50--100\,ns, 50--100\,GB/s per socket)
+\end{enumerate}
+Hardware prefetchers and cache coherence protocols (MESI and variants) sustain performance on workloads with temporal and spatial locality. Random pointer chasing --- common in trees, hash tables, and object graphs --- defeats prefetching and favors CPU architectures with large caches.
+
+\subsection{GPU Memory Subsystem}
+GPUs prioritize \textbf{bandwidth}. Thread-visible memory spaces include:
+\begin{itemize}
+    \item \textbf{Registers} --- per-thread, fastest, private.
+    \item \textbf{Shared memory / L1} --- per-SM, programmer-managed scratchpad for cooperative loads.
+    \item \textbf{L2 cache} --- device-wide, helps reuse across SMs.
+    \item \textbf{Global memory (HBM/GDDR)} --- high bandwidth (hundreds of GB/s to $>$1\,TB/s), high latency ($\sim$400--800\,cycles).
+    \item \textbf{Host memory} --- accessed via PCIe/NVLink; transfer cost often dominates small kernels.
+\end{itemize}
+
+The host-to-device transfer time for a buffer of size $D$ bytes is approximately:
+\begin{equation}
+T_{\mathrm{transfer}} = \frac{D}{B_{\mathrm{PCIe}}} + \tau_{\mathrm{launch}}
+\end{equation}
+where $B_{\mathrm{PCIe}}$ is link bandwidth (e.g., $\sim$32\,GB/s for PCIe 4.0 $\times$16) and $\tau_{\mathrm{launch}}$ is kernel launch latency ($\sim$5--20\,$\mu$s). Kernels must perform sufficient compute per transferred byte to amortize $\tau_{\mathrm{launch}}$ and PCIe overhead.
+
+\subsection{Unified Memory and Zero-Copy}
+Modern platforms offer Unified Memory (CUDA) and shared virtual addressing, allowing the OS and runtime to migrate pages between host and device on demand. These abstractions simplify programming but do not eliminate the physical cost of data movement; explicit buffer management and pinned (page-locked) host memory remain essential for peak performance.
+
+---
+
+\section{Workload Fit: When to Use CPU vs.\ GPU}
+
+\subsection{The Roofline Model}
+The roofline model plots attainable performance as a function of arithmetic intensity:
+\begin{equation}
+P = \min\!\left(P_{\mathrm{peak}},\; B_{\mathrm{mem}} \cdot \mathrm{AI}\right)
+\end{equation}
+where $\mathrm{AI} = \dfrac{\text{FLOP}}{\text{bytes moved}}$.
+
+\begin{itemize}
+    \item \textbf{Memory-bound} kernels ($\mathrm{AI}$ below the ridge point) are limited by bandwidth --- GPUs excel when $B_{\mathrm{mem,GPU}} \gg B_{\mathrm{mem,CPU}}$.
+    \item \textbf{Compute-bound} kernels ($\mathrm{AI}$ above the ridge point) are limited by peak FLOP/s --- the higher $P_{\mathrm{peak,GPU}}$ of tensor cores and wide SIMD units dominates.
+\end{itemize}
+
+The ridge point for a processor is $ \mathrm{AI}_{\mathrm{ridge}} = P_{\mathrm{peak}} / B_{\mathrm{mem}}$. GPUs typically have a lower ridge point than CPUs (favoring lower-AI kernels) but a higher ceiling for dense linear algebra.
+
+\subsection{CPU-Favorable Workloads}
+\begin{itemize}
+    \item Low parallelism or small problem sizes ($N$ too small to fill GPU).
+    \item Irregular control flow, recursion, and frequent synchronization.
+    \item Latency-sensitive tasks (interactive UI, request handling, transaction processing).
+    \item Complex data structures with poor spatial locality (graphs, databases, interpreters).
+    \item Pipelines where PCIe transfer dominates total runtime.
+\end{itemize}
+
+\subsection{GPU-Favorable Workloads}
+\begin{itemize}
+    \item Large-scale dense linear algebra (GEMM, convolutions, FFTs).
+    \item Embarrassingly parallel simulation (particles, Monte Carlo, image processing).
+    \item Neural network forward and backward passes (especially with mixed-precision tensor cores).
+    \item Rendering, video encoding/decoding (when hardware codecs are unavailable or custom kernels are needed).
+    \item Sustained batch processing where amortized transfer cost is negligible.
+\end{itemize}
+
+\subsection{Hybrid CPU--GPU Execution}
+Production systems routinely partition work across both:
+\begin{equation}
+T_{\mathrm{total}} = T_{\mathrm{CPU,serial}} + T_{\mathrm{transfer}} + T_{\mathrm{GPU,parallel}} + T_{\mathrm{sync}}
+\end{equation}
+Effective hybrid design overlaps $T_{\mathrm{transfer}}$ with $T_{\mathrm{GPU,parallel}}$ via CUDA streams or asynchronous queues, keeps hot data resident on device across iterations, and reserves the CPU for scheduling, preprocessing, and reductions ill-suited to SIMT hardware.
+
+---
+
+\section{Case Studies in Comparative Performance}
+
+\subsection{Dense Matrix Multiplication}
+For $C = A \times B$ with $A \in \mathbb{R}^{M \times K}$, $B \in \mathbb{R}^{K \times N}$, naive FLOP count is $2MNK$. Optimized GPU GEMM (cuBLAS, rocBLAS) achieves near-peak throughput by tiling into shared memory and exploiting tensor cores. CPUs (Intel MKL, OpenBLAS with AVX-512) remain competitive for small and medium matrices where GPU launch and transfer overhead dominate.
+
+\subsection{Neural Network Training}
+A training step involves forward pass, loss computation, and backward pass (gradient computation). The dominant operations --- matrix multiplications and convolutions --- are GPU-native. However, dataloader preprocessing, optimizer state management, and checkpointing often run on CPU. Large-language-model training distributes across \textbf{multi-GPU} clusters with CPU orchestration, illustrating that the CPU remains the control plane even in GPU-centric workloads.
+
+\subsection{Video Encoding (HEVC and Successors)}
+As discussed in related work on HEVC, encoder motion search is combinatorially expensive. Software encoders parallelize across frames and CTUs on CPUs; hardware encoders embed ASIC or fixed-function blocks on GPUs and dedicated media engines. Decode is lighter and increasingly offloaded to fixed-function units on both CPU-integrated graphics and discrete GPUs. The CPU--GPU boundary here is defined by \textbf{ASIC specialization}, not raw SIMT generality.
+
+---
+
+\section{Conclusion}
+CPUs and GPUs are complementary, not competing, architectures. The CPU provides low-latency, general-purpose execution with sophisticated control flow and cache hierarchies optimized for irregular, serial, and latency-sensitive tasks. The GPU provides high-throughput, data-parallel execution with massive bandwidth and SIMT scheduling optimized for regular, arithmetic-intensive kernels at scale.
+
+The decision criterion is not ``which is faster'' but ``which matches the workload's parallelism, arithmetic intensity, and memory access pattern.'' Amdahl's and Gustafson's laws bound scaling; the roofline model identifies whether a kernel is compute- or memory-bound; transfer and launch overhead determine whether offloading to the GPU is profitable at all.
+
+Modern computing increasingly adopts \textbf{heterogeneous systems}: CPUs manage control, I/O, and irregular logic; GPUs (and TPUs, FPGAs, and media ASICs) accelerate structured parallel phases. Understanding the architectural tradeoffs---latency versus throughput, MIMD versus SIMT, cache versus bandwidth---is essential for principled system design in data science, graphics, scientific computing, and real-time media processing.
+
+\begin{thebibliography}{4}
+\bibitem{hennessy2017}
+J. L. Hennessy and D. A. Patterson, \textit{Computer Architecture: A Quantitative Approach}, 6th ed. Morgan Kaufmann, 2017.
+\bibitem{nvidia2020}
+NVIDIA Corporation, ``NVIDIA Ampere Architecture Whitepaper,'' 2020.
+\bibitem{williams2009}
+S. Williams, A. Waterman, and D. Patterson, ``Roofline: An Insightful Visual Performance Model for Multicore Architectures,'' \textit{Communications of the ACM}, vol. 52, no. 4, pp. 65--76, Apr. 2009.
+\bibitem{amdahl1967}
+G. M. Amdahl, ``Validity of the Single Processor Approach to Achieving Large Scale Computing Capabilities,'' in \textit{Proc. AFIPS Spring Joint Computer Conf.}, 1967, pp. 483--485.
+\end{thebibliography}
+
+\end{document}
