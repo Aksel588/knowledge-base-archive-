@@ -1,0 +1,283 @@
+\documentclass[11pt,journal,onecolumn]{IEEEtran}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{bm}
+
+\begin{document}
+
+\title{TPUs, NPUs, and Domain-Specific Accelerators: When Specialization Beats SIMT}
+
+\author{Aksel Aghajanyan \\ \small Technical Report --- Knowledge Base Archive}
+
+\maketitle
+
+\begin{abstract}
+Central Processing Units (CPUs) and Graphics Processing Units (GPUs) occupy the general-purpose and data-parallel poles of modern heterogeneous computing, yet production systems increasingly rely on \textbf{domain-specific accelerators}---Tensor Processing Units (TPUs), Neural Processing Units (NPUs), Field-Programmable Gate Arrays (FPGAs), and fixed-function Application-Specific Integrated Circuits (ASICs)---to extract performance that programmable SIMT hardware cannot match at equal power or silicon cost. This report develops a principled framework for when specialization wins: algorithm stability, arithmetic structure, memory access regularity, deployment volume, and latency constraints. We examine systolic-array TPUs, edge NPUs, reconfigurable FPGA pipelines, and media ASICs (including HEVC hardware encoders), and compare each against GPU SIMT execution using the roofline model, energy--performance tradeoffs, and case studies in neural inference and video compression.
+\end{abstract}
+
+\section{Introduction}
+The prior analysis of CPU versus GPU architectures established that processor choice is governed by \textbf{workload fit}: latency-optimized MIMD cores for irregular control flow, throughput-optimized SIMT cores for large-scale data parallelism. That dichotomy, however, is incomplete. Modern datacenters, mobile SoCs, and edge devices embed a \textbf{spectrum of accelerators} alongside the CPU and GPU, each sacrificing programmability to maximize efficiency on a narrow class of computations.
+
+The phrase ``domain-specific accelerator'' (DSA) denotes hardware whose instruction set, datapath, and memory hierarchy are co-designed for a fixed algorithmic pattern---matrix multiply--accumulate in a TPU, convolution and depthwise ops in an NPU, motion search and transform coding in a video encoder ASIC. Unlike a GPU, which executes arbitrary CUDA kernels subject to SIMT constraints, a DSA typically exposes a \textbf{compiler target} or fixed API (XLA for TPUs, CoreML/NNAPI for NPUs, NVENC for media blocks) and hardwires the inner loop.
+
+Confusion arises when practitioners treat all accelerators as ``faster GPUs.'' They are not. A TPU v4 pod excels at large-batch matrix operations with predictable dataflow but cannot run arbitrary branch-heavy graph algorithms. An FPGA can implement a custom HEVC motion-search pipeline at wire speed but requires months of RTL or HLS engineering per design. A smartphone NPU delivers milliwatt-class inference but supports only a subset of ONNX operators. The engineering question is not ``GPU or accelerator'' but \textbf{where on the specialization spectrum} a workload belongs.
+
+This report compares DSAs across four axes: the specialization spectrum and design economics, TPU and systolic-array architecture, NPUs and edge inference, FPGAs and reconfigurable pipelines, fixed-function media ASICs (with emphasis on HEVC), and decision criteria for when specialization beats SIMT.
+
+---
+
+\section{The Specialization Spectrum}
+
+\subsection{From General Purpose to Fixed Function}
+Compute hardware may be ordered by decreasing flexibility and increasing peak efficiency on a target workload:
+\begin{enumerate}
+    \item \textbf{CPU} --- fully programmable, MIMD, optimized for latency and irregular parallelism.
+    \item \textbf{GPU} --- programmable SIMT, optimized for throughput on data-parallel kernels.
+    \item \textbf{Structured accelerators (TPU, NPU)} --- programmable within a \textbf{operator graph} or tensor algebra; datapath hardwired for GEMM, convolutions, and reductions.
+    \item \textbf{Reconfigurable logic (FPGA)} --- gate-level reprogrammability; efficiency between ASIC and GPU for stable pipelines.
+    \item \textbf{Fixed-function ASIC} --- hardwired state machines and arithmetic units for one algorithm (video encode/decode, crypto, DSP).
+\end{enumerate}
+
+Let $E$ denote energy per operation, $P$ peak throughput on the target kernel, and $F$ flexibility (ability to run new algorithms without silicon respin). Empirically:
+\begin{equation}
+F_{\mathrm{CPU}} > F_{\mathrm{GPU}} > F_{\mathrm{TPU}} > F_{\mathrm{FPGA}} > F_{\mathrm{ASIC}}, \quad
+E_{\mathrm{ASIC}} \lesssim E_{\mathrm{TPU}} < E_{\mathrm{GPU}} \ll E_{\mathrm{CPU}} \text{ (on-target)}
+\end{equation}
+Specialization trades $F$ for lower $E$ and higher $P$ on the chosen kernel family.
+
+\subsection{The Economics of Specialization}
+Fixed-function ASICs amortize non-recurring engineering (NRE) cost over \textbf{unit volume}. If NRE is $C_{\mathrm{NRE}}$ and per-unit marginal cost is $c_{\mathrm{ASIC}}$, break-even against a programmable GPU with per-unit cost $c_{\mathrm{GPU}}$ occurs at volume $V^*$ satisfying:
+\begin{equation}
+C_{\mathrm{NRE}} + V \cdot c_{\mathrm{ASIC}} = V \cdot c_{\mathrm{GPU}} \quad \Rightarrow \quad V^* = \frac{C_{\mathrm{NRE}}}{c_{\mathrm{GPU}} - c_{\mathrm{ASIC}}}
+\end{equation}
+Cloud TPUs and smartphone NPUs justify specialization through \textbf{aggregate fleet volume} and \textbf{power envelopes} rather than per-chip sales alone. FPGAs occupy a middle ground: reprogrammable without full ASIC NRE, but typically lower clock frequency and higher power than hardened logic for the same function.
+
+\subsection{When SIMT Leaves Performance on the Table}
+GPUs pay overhead for generality: instruction fetch and decode per warp, register files sized for arbitrary thread counts, branch divergence handling, and kernel launch latency. When a workload satisfies all of the following, a DSA typically wins:
+\begin{itemize}
+    \item \textbf{Stable algorithm} --- the computation graph changes infrequently (months or years, not per request).
+    \item \textbf{Regular dataflow} --- predictable, dense memory access (systolic streaming, line buffers) rather than pointer chasing.
+    \item \textbf{High arithmetic intensity} on a narrow operator set (GEMM, MAC arrays, DCT butterflies).
+    \item \textbf{Sustained batch or stream} --- sufficient work to fill the accelerator pipeline continuously.
+    \item \textbf{Power or latency budget} --- mobile milliwatts, datacenter TCO, or real-time line-rate constraints.
+\end{itemize}
+If any condition fails---small batches, frequent graph changes, irregular sparsity, or one-off prototypes---a GPU (or CPU) remains the rational choice.
+
+---
+
+\section{Tensor Processing Units and Systolic Arrays}
+
+\subsection{Motivation: ML as Dense Linear Algebra}
+Neural network training and inference reduce overwhelmingly to \textbf{generalized matrix multiplication} (GEMM) and convolutions (im2col + GEMM). A fully connected layer computes $Y = XW + b$; a convolution expands to a batched GEMM after im2col. Backpropagation is likewise dominated by GEMM and its transposed variants. GPUs accelerate these via SIMT thread blocks and tensor cores; TPUs hardwire the inner multiply--accumulate loop into a \textbf{systolic array}.
+
+\subsection{Systolic Array Execution}
+A systolic array is a mesh of processing elements (PEs) where data flows rhythmically through nearest neighbors with minimal off-chip memory traffic. For $C = A \times B$ with $A \in \mathbb{R}^{M \times K}$, $B \in \mathbb{R}^{K \times N}$, rows of $A$ and columns of $B$ are streamed through an $R \times R$ array of PEs. Each PE $p_{ij}$ holds a partial sum and performs:
+\begin{equation}
+c_{ij} \leftarrow c_{ij} + a_i \cdot b_j
+\end{equation}
+as $a_i$ propagates horizontally and $b_j$ vertically. After $K$ clock cycles (for an $R \times R$ tile with appropriate skew), a tile of $C$ is accumulated. The key property is \textbf{reuse in place}: each loaded element participates in $R$ MACs before leaving the array, maximizing arithmetic intensity without a large register file per thread.
+
+Peak throughput on an array of size $R$ at frequency $f$ is approximately:
+\begin{equation}
+P_{\mathrm{systolic}} \approx 2 R^2 f \quad \text{(FLOP/s per array, multiply--add counted as 2 FLOP)}
+\end{equation}
+Google's TPU v4i uses multiple large systolic arrays with High-Bandwidth Memory (HBM); TPU pods interconnect chips via toroidal networks for scaled training.
+
+\subsection{TPU vs.\ GPU: Structural Differences}
+\begin{itemize}
+    \item \textbf{Unified compiler stack} --- XLA compiles TensorFlow/JAX graphs directly to TPU instructions; the programmer rarely writes kernels.
+    \item \textbf{Deterministic dataflow} --- no SIMT divergence, no occupancy tuning; batch dimensions must align with array geometry.
+    \item \textbf{On-chip activation buffering} --- scratchpad memory holds tiles of activations and weights; off-chip bandwidth is scheduled statically.
+    \item \textbf{bfloat16 and int8 native paths} --- reduced precision is first-class, not an optional tensor-core mode.
+\end{itemize}
+
+For large-batch training of dense transformers, TPU pods often achieve superior \textbf{performance per dollar and per watt} because the entire chip is devoted to sustained GEMM. For irregular workloads---dynamic shapes, sparse attention patterns, reinforcement-learning environments with CPU-bound simulation---GPUs retain flexibility advantages.
+
+\subsection{Roofline Comparison}
+Applying the roofline model, a TPU's ridge point $\mathrm{AI}_{\mathrm{ridge}} = P_{\mathrm{peak}} / B_{\mathrm{mem}}$ is tuned for GEMM-heavy kernels. Operations below the ridge (elementwise activations, layer normalization with low reuse) may underutilize the systolic array unless \textbf{fused} into adjacent GEMM tiles by the compiler. GPUs handle unfused low-AI kernels more gracefully via high occupancy across concurrent warps, but at higher energy cost.
+
+---
+
+\section{Neural Processing Units and Edge Inference}
+
+\subsection{The Edge Constraint}
+Smartphone, wearable, and embedded SoCs cannot attach datacenter GPUs. Inference must run within a \textbf{thermal design power (TDP)} of 1--5\,W for sustained use, with peak bursts for camera and voice workloads. NPUs (Apple Neural Engine, Qualcomm Hexagon, Arm Ethos, Samsung NPU) are DSAs integrated alongside CPU and GPU on the same die, optimized for \textbf{low-batch, low-precision inference}.
+
+\subsection{Typical NPU Architecture}
+NPUs combine:
+\begin{itemize}
+    \item \textbf{MAC arrays} --- smaller than TPU systolic arrays (hundreds to low thousands of MACs), clocked for energy efficiency.
+    \item \textbf{Direct memory access (DMA) engines} --- prefetch weights and activations into local SRAM while compute proceeds.
+    \item \textbf{Fixed-function units} --- depthwise convolutions, pooling, activation lookup tables, and Winograd transforms.
+    \item \textbf{Weight compression} --- on-the-fly decompression of int4/int8 quantized weights to reduce DRAM bandwidth.
+\end{itemize}
+
+Effective inference latency for a layer with $N_{\mathrm{MAC}}$ multiply--accumulates and peak NPU throughput $P_{\mathrm{NPU}}$ is bounded by:
+\begin{equation}
+T_{\mathrm{layer}} \geq \max\!\left( \frac{2 N_{\mathrm{MAC}}}{P_{\mathrm{NPU}}},\; \frac{D_{\mathrm{weights}} + D_{\mathrm{acts}}}{B_{\mathrm{mem}}} \right)
+\end{equation}
+where $D_{\mathrm{weights}}$ and $D_{\mathrm{acts}}$ are bytes moved and $B_{\mathrm{mem}}$ is local or DRAM bandwidth. NPUs win when the model fits supported operators and quantization schemes; unsupported ops \textbf{fall back} to CPU or GPU, fragmenting the pipeline.
+
+\subsection{NPU vs.\ GPU on Mobile}
+Mobile GPUs (Adreno, Mali, Apple GPU) are SIMT-capable and run general compute shaders, but draw higher power per inference token than a matched NPU. NPUs excel at:
+\begin{itemize}
+    \item Camera pipeline models (face detection, segmentation, denoising) with fixed graphs.
+    \item Always-on voice triggers and keyword spotting (tiny models, strict latency).
+    \item Int8/int4 quantized vision and small-language-model inference.
+\end{itemize}
+GPUs remain preferable for gaming graphics, custom shader research, and models requiring operators absent from the NPU compiler (exotic activations, dynamic control flow, training).
+
+---
+
+\section{FPGAs and Reconfigurable Acceleration}
+
+\subsection{Architecture and Programming Model}
+A Field-Programmable Gate Array implements computation as a configurable network of lookup tables (LUTs), flip-flops, DSP slices (hard multipliers), and block RAM. Unlike a GPU kernel that executes sequentially over threads, an FPGA \textbf{pipeline} processes one sample or pixel per clock cycle once the pipeline is full---achieving deterministic, stream-processing latency.
+
+Throughput for a fully pipelined design processing one element per cycle at frequency $f$ is:
+\begin{equation}
+P_{\mathrm{FPGA}} = f \cdot \text{ops per element}
+\end{equation}
+Latency to first output is the pipeline depth $L$ (cycles), but sustained throughput is $f$ regardless of $L$ once filled.
+
+\subsection{High-Level Synthesis and Dataflow}
+Modern FPGA development uses High-Level Synthesis (HLS) from C/C++ or OpenCL, or frameworks such as Vitis AI. The designer expresses loop nests with \texttt{\#pragma HLS pipeline} and \texttt{\#pragma HLS dataflow}, mapping arrays to BRAM and loops to spatial pipelines. This suits:
+\begin{itemize}
+    \item \textbf{Streaming DSP} --- FIR filters, FFT stages, custom modems.
+    \item \textbf{Network packet processing} --- fixed header parsing at line rate.
+    \item \textbf{Prototype ASICs} --- validate an algorithm in silicon before committing to NRE.
+    \item \textbf{Low-volume specialized codecs} --- custom entropy coders or niche video formats.
+\end{itemize}
+
+\subsection{FPGA vs.\ GPU and ASIC}
+\begin{itemize}
+    \item \textbf{vs.\ GPU} --- FPGAs win on deterministic latency, wire-speed streaming I/O, and bit-exact custom arithmetic at moderate parallelism; GPUs win on peak FLOP/s for large batched linear algebra and software ecosystem maturity.
+    \item \textbf{vs.\ ASIC} --- FPGAs avoid NRE respin but consume more area and power per function; at high volume, hardened ASICs dominate TCO.
+\end{itemize}
+
+Microsoft's Project Catapult and Amazon F1 instances exemplify datacenter FPGA deployment for search ranking and custom networking; these workloads have stable logic, moderate parallelism, and value \textbf{throughput per watt} over raw programmability.
+
+---
+
+\section{Fixed-Function Media ASICs and HEVC}
+
+\subsection{The Encode--Decode Asymmetry}
+As established in the HEVC analysis, video encoding is a combinatorial rate--distortion search over partition modes, motion vectors, transform coefficients, and quantization parameters. Decoding executes only the inverse path specified in the bitstream. Encoder complexity exceeds decoder complexity by one to two orders of magnitude. Real-time encoding at 4K/60 therefore demands hardware assistance; software encoders on CPU or GPU remain viable for offline transcoding with unbounded search depth.
+
+\subsection{Hardware Encoder Pipeline}
+A fixed-function HEVC (or H.264/AV1) encoder ASIC implements hardened blocks for:
+\begin{itemize}
+    \item \textbf{Motion estimation} --- hierarchical integer and sub-pel SAD/SSD search with early termination heuristics.
+    \item \textbf{Transform and quantization} --- separable DCT/DST butterfly networks and QP-dependent quantizers.
+    \item \textbf{Entropy coding} --- CABAC or equivalent bitstream packing (encode-side only).
+    \item \textbf{In-loop filtering} --- deblocking and SAO applied before reference picture insertion.
+\end{itemize}
+Each block is a dedicated datapath operating on line buffers or CTU-sized windows, not a SIMT kernel launching thousands of threads per CTU. NVIDIA NVENC, Intel Quick Sync Video (QSV), Apple Media Engine, and AMD VCE embed such blocks alongside programmable GPU compute.
+
+\subsection{Why SIMT Struggles with Encode}
+Motion search over a $\pm 128$ pixel window with quarter-pel interpolation for a $64 \times 64$ CTU involves irregular early-exit branches, variable partition decisions, and frequent reference memory access with poor cross-thread reuse. Mapping this to SIMT yields:
+\begin{equation}
+\text{Effective GPU encode throughput} \ll P_{\mathrm{peak,GPU}} \cdot \eta_{\mathrm{divergence}} \cdot \eta_{\mathrm{occupancy}}
+\end{equation}
+where $\eta_{\mathrm{divergence}}, \eta_{\mathrm{occupancy}} < 1$ penalize branchy search logic. A hardened ME engine achieves near-constant cycles per CTU independent of warp scheduling.
+
+Decode, by contrast, is lighter and increasingly handled by fixed-function units on integrated graphics; the residual add, inverse transform, and motion compensation map more cleanly to SIMD or SIMT, though dedicated decode ASICs still dominate power efficiency for mobile playback.
+
+\subsection{GPU Role in Video Pipelines}
+GPUs remain essential for:
+\begin{itemize}
+    \item \textbf{Pre/post processing} --- scaling, color conversion, denoising, AI-based enhancement (super-resolution, artifact reduction).
+    \item \textbf{Custom or research encoders} --- when standard ASICs lack required rate-control or quality features.
+    \item \textbf{Decode + GPU compute fusion} --- rendering decoded frames as textures without CPU copies.
+\end{itemize}
+The CPU--GPU--ASIC boundary in video is defined by \textbf{which pipeline stages are algorithmically frozen in silicon} versus which require ongoing software evolution.
+
+---
+
+\section{Decision Framework: Specialization vs.\ SIMT}
+
+\subsection{Workload Checklist}
+Table~\ref{tab:fit} summarizes accelerator fit. Use it as a heuristic, not a rigid taxonomy.
+
+\begin{table}[h]
+\centering
+\caption{Accelerator fit by workload characteristic}
+\label{tab:fit}
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Characteristic} & \textbf{Prefer DSA/ASIC} & \textbf{Prefer GPU SIMT} \\
+\midrule
+Algorithm stability & Fixed for product lifetime & Evolving weekly \\
+Batch / stream size & Large, sustained & Small, bursty \\
+Control flow & Regular, predictable & Branchy, divergent \\
+Memory pattern & Streaming, tiled & Irregular, sparse \\
+Precision & int8/bf16 native & Mixed, experimental \\
+Volume / NRE & High fleet or mobile TDP & Low, prototype \\
+Latency target & Fixed line rate (e.g., 16\,ms) & Soft, throughput-oriented \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Energy--Delay Product}
+For deployment at scale, total cost of ownership favors the architecture minimizing:
+\begin{equation}
+\mathrm{EDP} = E_{\mathrm{op}} \cdot T_{\mathrm{latency}}
+\end{equation}
+DSAs reduce $E_{\mathrm{op}}$ on-target; GPUs reduce $T_{\mathrm{latency}}$ for diverse parallel kernels via massive parallelism. Hybrid systems assign each sub-problem to the minimizing architecture and accept \textbf{partitioning overhead} at interfaces (PCIe, shared memory, graph partitioning).
+
+\subsection{The Heterogeneous System Equation}
+Extending the CPU--GPU hybrid model, end-to-end latency on a system with CPU, GPU, TPU/NPU, and media ASIC is:
+\begin{equation}
+T_{\mathrm{total}} = T_{\mathrm{CPU,control}} + \sum_k \left( T_{\mathrm{transfer},k} + T_{\mathrm{accel},k} + T_{\mathrm{sync},k} \right)
+\end{equation}
+Specialization wins only when $T_{\mathrm{accel},k}$ (and associated energy) savings exceed transfer and synchronization costs. Keeping tensors resident on-device across training steps, fusing operators in compiler graphs, and colocating media ASICs with GPU memory (zero-copy decode surfaces) are standard techniques to satisfy this inequality.
+
+---
+
+\section{Case Studies}
+
+\subsection{Large-Language-Model Inference}
+Transformer inference is memory-bandwidth-bound during autoregressive decoding (batch size 1, sequential token generation) and compute-bound during prefill (processing the prompt in parallel). Datacenter deployments use:
+\begin{itemize}
+    \item \textbf{GPU tensor cores} --- flexible, strong ecosystem (vLLM, TensorRT-LLM), excellent for mixed batch sizes.
+    \item \textbf{TPU/GPU-class ASICs (Google TPU, AWS Trainium/Inferentia)} --- optimized for sustained batch inference and int8/bf16 GEMM at fleet scale.
+    \item \textbf{Mobile NPUs} --- quantized small models (1--7B parameters, int4) for on-device assistants.
+\end{itemize}
+Speculative decoding and mixture-of-experts routing reintroduce irregularity, temporarily favoring programmable GPUs until specialized routing hardware matures.
+
+\subsection{Video Transcoding at Scale}
+A cloud transcoding farm receiving user uploads typically pipelines: demux (CPU) $\rightarrow$ decode (ASIC or GPU fixed-function) $\rightarrow$ optional GPU filter $\rightarrow$ encode (NVENC/QSV ASIC for speed, x265 CPU/GPU for quality tier). The \textbf{quality tier} selects programmable versus fixed-function encode: ASICs for live streaming latency; software encoders for archival quality with custom rate--distortion tuning.
+
+\subsection{HEVC and the Silicon Stack}
+A smartphone recording 4K video routes camera frames through an Image Signal Processor (ISP), then to a hardware HEVC encoder ASIC, bypassing the GPU entirely for the compression hot path. Playback inverts the chain via hardware decode. The GPU handles UI composition and effects. This three-way partition---CPU for orchestration, ASIC for codec line rate, GPU for graphics---is the canonical heterogeneous media stack.
+
+---
+
+\section{Conclusion}
+Domain-specific accelerators are not universal speedups; they are \textbf{contractual bargains} with silicon. The designer commits to a stable algorithm, regular dataflow, and sufficient volume (or a strict power envelope); the hardware returns lower energy per operation and higher sustained throughput than SIMT generality can provide.
+
+TPUs and systolic arrays dominate large-scale dense linear algebra when compiler-managed dataflow aligns with array geometry. NPUs deliver milliwatt-class inference on mobile SoCs for supported quantized graphs. FPGAs bridge prototype and production for streaming, line-rate custom logic. Fixed-function media ASICs implement HEVC and successor codecs at real-time line rates where branchy motion search defeats GPU occupancy.
+
+The decision criterion parallels CPU versus GPU analysis: match the processor class to \textbf{algorithm stability}, \textbf{arithmetic structure}, \textbf{memory regularity}, and \textbf{deployment economics}. Modern systems combine all classes---CPU control plane, GPU general parallel compute, TPU/NPU structured inference, FPGA reconfigurable I/O, and media ASIC fixed pipelines---into a single heterogeneous stack. Understanding when specialization beats SIMT is essential for principled design in machine learning infrastructure, mobile AI, cloud transcoding, and real-time signal processing.
+
+\begin{thebibliography}{6}
+\bibitem{hennessy2017}
+J. L. Hennessy and D. A. Patterson, \textit{Computer Architecture: A Quantitative Approach}, 6th ed. Morgan Kaufmann, 2017.
+\bibitem{jouppi2017}
+N. P. Jouppi \textit{et al.}, ``In-Datacenter Performance Analysis of a Tensor Processing Unit,'' in \textit{Proc. ISCA}, 2017, pp. 1--12.
+\bibitem{kung1982}
+H. T. Kung, ``Why Systolic Architectures?'' \textit{IEEE Computer}, vol. 15, no. 1, pp. 37--46, Jan. 1982.
+\bibitem{williams2009}
+S. Williams, A. Waterman, and D. Patterson, ``Roofline: An Insightful Visual Performance Model for Multicore Architectures,'' \textit{Communications of the ACM}, vol. 52, no. 4, pp. 65--76, Apr. 2009.
+\bibitem{sullivan2012}
+G. J. Sullivan \textit{et al.}, ``Overview of the High Efficiency Video Coding (HEVC) Standard,'' \textit{IEEE Trans. Circuits Syst. Video Technol.}, vol. 22, no. 12, pp. 1649--1668, Dec. 2012.
+\bibitem{xilinx2020}
+AMD/Xilinx, ``UltraScale Architecture and Product Overview,'' Product Guide, 2020.
+\end{thebibliography}
+
+\end{document}
