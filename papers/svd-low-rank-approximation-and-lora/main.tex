@@ -1,0 +1,127 @@
+\documentclass[11pt,journal,onecolumn]{IEEEtran}
+\usepackage{amsmath,amssymb,amsfonts,amsthm}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{bm}
+
+% Embedded Semantic & Google Scholar PDF Metadata
+\usepackage[
+    pdfauthor={Aksel Aghajanyan},
+    pdftitle={Singular Value Decomposition (SVD) and Low-Rank Approximation: Theory, PCA, and Modern Parameter-Efficient Fine-Tuning (LoRA)},
+    pdfsubject={Computational Linear Algebra, Machine Learning Foundations, Low-Rank Approximations, Parameter-Efficient Fine-Tuning},
+    pdfkeywords={Singular Value Decomposition, SVD, Low-Rank Matrix Approximation, Principal Component Analysis, PCA, Eckart-Young-Mirsky Theorem, Parameter-Efficient Fine-Tuning, PEFT, LoRA, Intrinsic Dimensionality, Deep Learning},
+    pdfcreator={pdfLaTeX with hyperref and hyperxmp},
+    colorlinks=true,
+    linkcolor=blue,
+    citecolor=blue,
+    urlcolor=blue
+]{hyperref}
+\usepackage{hyperxmp}
+
+\hypersetup{
+    pdfauthor={Aksel Aghajanyan},
+    pdftitle={Singular Value Decomposition (SVD) and Low-Rank Approximation: Theory, PCA, and Modern Parameter-Efficient Fine-Tuning (LoRA)},
+    pdfsubject={Computational Linear Algebra, Machine Learning Foundations, Low-Rank Approximations, Parameter-Efficient Fine-Tuning},
+    pdfkeywords={Singular Value Decomposition, SVD, Low-Rank Matrix Approximation, Principal Component Analysis, PCA, Eckart-Young-Mirsky Theorem, Parameter-Efficient Fine-Tuning, PEFT, LoRA, Intrinsic Dimensionality, Deep Learning},
+    pdfpublisher={Knowledge Base Archive},
+    pdfpublication={Technical Report, Knowledge Base Archive},
+    pdfcopyright={Copyright \textcopyright\ 2026 Aksel Aghajanyan. All rights reserved.},
+    pdflicenseurl={https://creativecommons.org/licenses/by/4.0/},
+    pdfdate={2026-08-20}
+}
+
+\newtheorem{theorem}{Theorem}
+\newtheorem{definition}{Definition}
+\newtheorem{lemma}{Lemma}
+\newtheorem{corollary}{Corollary}
+
+\begin{document}
+
+\title{Singular Value Decomposition (SVD) and Low-Rank Approximation: \\ Theory, PCA, and Modern Parameter-Efficient Fine-Tuning (LoRA)}
+
+\author{Aksel Aghajanyan \\ \small Technical Report --- Knowledge Base Archive}
+
+\maketitle
+
+\begin{abstract}
+High-dimensional representations dominate modern computational mathematics and deep learning. However, empirical data manifolds and parameterized neural network transformations often exhibit an intrinsic rank far lower than their nominal ambient dimension. This paper provides a mathematically rigorous, self-contained exposition of Singular Value Decomposition (SVD) and low-rank matrix approximation. Beginning with the spectral decomposition of Hermitian operators and the geometric derivation of SVD, we prove the fundamental Eckart-Young-Mirsky theorem under both Frobenius and spectral norms. We establish the direct equivalence between truncated SVD and Principal Component Analysis (PCA) for variance maximization and minimum reconstruction error. Finally, we bridge classical matrix factorizations with contemporary deep learning, demonstrating how low-rank hypothesis dynamics motivate Parameter-Efficient Fine-Tuning (PEFT) methods, specifically Low-Rank Adaptation (LoRA), and analyze its forward propagation, gradient dynamics, and memory complexity.
+\end{abstract}
+
+
+
+\section{Introduction}
+The exponential scaling of deep neural networks, particularly Large Language Models (LLMs), has led to architectures comprising billions, or even trillions, of parameters. While this over-parameterization is crucial for capturing complex data distributions during pre-training, it presents a prohibitive computational bottleneck for downstream task adaptation. Full fine-tuning requires updating the entire weight matrix, demanding massive memory footprints for optimizer states and gradients.
+
+However, recent empirical studies suggest that over-parameterized models reside on an intrinsic, low-dimensional manifold. When adapting to a specific downstream task, the necessary weight updates exhibit a significantly lower intrinsic rank than the ambient dimension of the original weight matrices. This principle is not entirely novel; it is deeply rooted in classical linear algebra and statistical learning, specifically Singular Value Decomposition (SVD) and Principal Component Analysis (PCA).
+
+This paper systematically bridges these classical foundations with modern Parameter-Efficient Fine-Tuning (PEFT). We proceed as follows: Section \ref{sec:svd} rigorously defines SVD and its geometric intuition. Section \ref{sec:eym} proves the Eckart-Young-Mirsky theorem, establishing the optimality of truncated SVD for low-rank approximation. Section \ref{sec:pca} connects SVD to variance maximization in PCA. Finally, Section \ref{sec:lora} formulates Low-Rank Adaptation (LoRA), demonstrating how the mathematical hypothesis of low intrinsic rank resolves the computational bottlenecks of modern deep learning.
+
+\section{Mathematical Foundations: Singular Value Decomposition}
+\label{sec:svd}
+
+Before analyzing the parameter matrices of neural networks, we must establish the spectral properties of arbitrary linear operators. The Singular Value Decomposition (SVD) is the foundational theorem that guarantees any matrix, regardless of its dimensions or rank, can be decomposed into three highly structured matrices.
+
+\subsection{The SVD Theorem}
+Let $A \in \mathbb{R}^{m \times n}$ be an arbitrary real matrix of rank $r \leq \min(m, n)$. The Singular Value Decomposition of $A$ is a factorization of the form:
+\begin{equation}
+A = U \Sigma V^T
+\end{equation}
+where:
+\begin{itemize}
+    \item $U \in \mathbb{R}^{m \times m}$ is an orthogonal matrix ($U^T U = I_m$). The columns of $U$, denoted as $u_i$, are the \textit{left singular vectors} of $A$. They form an orthonormal basis for the column space of $A$.
+    \item $V \in \mathbb{R}^{n \times n}$ is an orthogonal matrix ($V^T V = I_n$). The columns of $V$, denoted as $v_i$, are the \textit{right singular vectors} of $A$. They form an orthonormal basis for the row space of $A$.
+    \item $\Sigma \in \mathbb{R}^{m \times n}$ is a diagonal matrix containing the \textit{singular values} $\sigma_i$ along its main diagonal, such that $\sigma_1 \geq \sigma_2 \geq \dots \geq \sigma_r > 0$, and $\sigma_i = 0$ for $i > r$.
+\end{itemize}
+
+\subsection{Geometric Interpretation}
+Geometrically, the transformation $x \mapsto Ax$ can be decomposed into a sequence of three elementary operations:
+\begin{enumerate}
+    \item \textbf{Rotation/Reflection ($V^T$):} The input vector $x$ is projected onto the orthonormal basis defined by the right singular vectors.
+    \item \textbf{Scaling ($\Sigma$):} The rotated vector is stretched or compressed along the coordinate axes by factors equal to the singular values $\sigma_i$. Directions associated with $\sigma_i = 0$ are collapsed entirely.
+    \item \textbf{Rotation/Reflection ($U$):} The scaled vector is rotated into the final output space $\mathbb{R}^m$.
+\end{enumerate}
+
+This decomposition is crucial for understanding the informational hierarchy within a matrix. The largest singular values represent the directions of maximum variance or dominant linear transformations, a property that forms the basis for low-rank approximation.
+
+
+
+
+
+
+\section{Low-Rank Approximation: The Eckart-Young-Mirsky Theorem}
+\label{sec:eym}
+
+The foundational premise of Parameter-Efficient Fine-Tuning is that high-dimensional matrices can be accurately represented by lower-dimensional approximations. This is formalized by the Eckart-Young-Mirsky (EYM) Theorem.
+
+\subsection{Truncated SVD}
+To construct a rank-$k$ approximation of a matrix $A$ (where $k < r$), we truncate the SVD matrices to include only the top $k$ singular values and their corresponding vectors. We define the truncated matrix $A_k$ as:
+\begin{equation}
+    A_k = U_k \Sigma_k V_k^T = \sum_{i=1}^{k} \sigma_i u_i v_i^T
+\end{equation}
+where $U_k \in \mathbb{R}^{m \times k}$, $\Sigma_k \in \mathbb{R}^{k \times k}$, and $V_k^T \in \mathbb{R}^{k \times n}$.
+
+\subsection{The Theorem and Optimality}
+The EYM Theorem states that this truncated matrix $A_k$ is the absolute best possible rank-$k$ approximation of $A$ under specific norms.
+
+\begin{theorem}[Eckart-Young-Mirsky]
+Let $A \in \mathbb{R}^{m \times n}$ have rank $r$, and let $A = U \Sigma V^T$ be its singular value decomposition. For any integer $k$ such that $1 \leq k < r$, let $A_k = \sum_{i=1}^{k} \sigma_i u_i v_i^T$. Then, $A_k$ is the best rank-$k$ approximation of $A$ under the Frobenius norm:
+\begin{equation}
+    A_k = \arg\min_{B \in \mathbb{R}^{m \times n}, \text{rank}(B)=k} \| A - B \|_F
+\end{equation}
+Furthermore, the minimum error achieved by this approximation is exactly:
+\begin{equation}
+    \min_{B, \text{rank}(B)=k} \| A - B \|_F^2 = \sum_{i=k+1}^{r} \sigma_i^2
+\end{equation}
+\end{theorem}
+
+This theorem is profound because it provides a closed-form, deterministic solution to an optimization problem. In the context of neural networks, if the weight matrix $W$ has an intrinsic rank of $k$, compressing it using $W_k$ discards only the mathematical "noise" represented by the smallest singular values, forming the exact mathematical justification for LoRA.
+
+
+
+
+
+
+\end{document}

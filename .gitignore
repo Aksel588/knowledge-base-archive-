@@ -1,0 +1,32 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# IDEs and Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# LaTeX Intermediate Build Artifacts
+*.aux
+*.log
+*.out
+*.bbl
+*.blg
+*.brf
+*.bcf
+*.run.xml
+*.synctex.gz
+*.toc
+*.lof
+*.lot
+*.fls
+*.fdb_latexmk
+*.nav
+*.snm
+*.vrb
+*.dvi

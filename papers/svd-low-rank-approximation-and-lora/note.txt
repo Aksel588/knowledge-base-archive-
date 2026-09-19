@@ -1,0 +1,145 @@
+================================================================================
+RESEARCH READING LIST & RESOURCES: SVD, LOW-RANK APPROXIMATIONS, AND LORA
+================================================================================
+
+TOPIC:
+Singular Value Decomposition (SVD) and Low-Rank Approximation:
+Theory, PCA, and Modern Parameter-Efficient Fine-Tuning (LoRA)
+
+--------------------------------------------------------------------------------
+1. MATHEMATICAL FOUNDATIONS: SVD & SPECTRAL THEORY
+--------------------------------------------------------------------------------
+
+[1] "The approximation of one matrix by another of lower rank"
+    Authors: Carl Eckart, Gale Young (1936)
+    Journal: Psychometrika, 1(3), 211-218
+    Link: https://doi.org/10.1007/BF02288367
+    Core Concepts: The foundational proof of optimal low-rank matrix approximation
+    (the Eckart-Young Theorem) using SVD.
+
+[2] "Symmetric gauge functions and unitarily invariant norms"
+    Author: Leon Mirsky (1960)
+    Journal: The Quarterly Journal of Mathematics, 11(1), 50-59
+    Link: https://doi.org/10.1093/qmath/11.1.50
+    Core Concepts: Generalization of the Eckart-Young theorem to all unitarily 
+    invariant norms (spectral/operator norm, Frobenius norm, Schatten p-norms).
+
+[3] "Calculating the singular values and pseudo-inverse of a matrix"
+    Authors: Gene Golub, William Kahan (1965)
+    Journal: SIAM Journal on Numerical Analysis
+    Link: https://doi.org/10.1137/0702016
+    Core Concepts: Numerical computation and bidiagonal reduction algorithms for SVD.
+
+[4] MIT 18.06: Linear Algebra & SVD Lectures
+    Instructor: Prof. Gilbert Strang
+    Link: https://ocw.mit.edu/courses/18-06-linear-algebra-spring-2010/
+    Notes: Fundamental geometry of the four fundamental subspaces and SVD.
+
+--------------------------------------------------------------------------------
+2. RANDOMIZED SVD & LARGE-SCALE NUMERICAL LINEAR ALGEBRA
+--------------------------------------------------------------------------------
+
+[5] "Finding structure with randomness: Probabilistic algorithms for constructing approximate matrix decompositions"
+    Authors: Nathan Halko, Per-Gunnar Martinsson, Joel A. Tropp (2011)
+    arXiv: https://arxiv.org/abs/0909.4061
+    Journal: SIAM Review, 53(2), 217-288
+    Link: https://doi.org/10.1137/090771806
+    Core Concepts: Randomized SVD, low-rank matrix projections for massive matrices 
+    with theoretical error bounds.
+
+--------------------------------------------------------------------------------
+3. PRINCIPAL COMPONENT ANALYSIS (PCA) & DATA DECOMPOSITION
+--------------------------------------------------------------------------------
+
+[6] "On lines and planes of closest fit to systems of points in space"
+    Author: Karl Pearson (1901)
+    Journal: Philosophical Magazine, 2(11), 559-572
+    Link: https://doi.org/10.1080/14786440109462720
+    Core Concepts: Geometric derivation of best-fitting hyperplanes and variance 
+    maximization.
+
+[7] "A Tutorial on Principal Component Analysis"
+    Author: Jonathon Shlens (2014)
+    arXiv: https://arxiv.org/abs/1404.1100
+    Core Concepts: Step-by-step mathematical guide connecting covariance matrices, 
+    eigenvectors, and SVD.
+
+--------------------------------------------------------------------------------
+4. INTRINSIC DIMENSIONALITY & SUBSPACE DYNAMICS IN NEURAL NETWORKS
+--------------------------------------------------------------------------------
+
+[8] "Measuring the Intrinsic Dimension of Objective Landscapes"
+    Authors: Chunyuan Li, Heerad Farkhoor, Rosanne Liu, Jason Yosinski (2018)
+    arXiv: https://arxiv.org/abs/1804.08838
+    Conference: ICLR 2018
+    Core Concepts: Demonstrates that deep neural networks can be trained within 
+    random low-dimensional subspaces.
+
+[9] "Intrinsic Dimensionality Explains the Effectiveness of Language Model Fine-Tuning"
+    Authors: Armen Aghajanyan, Luke Zettlemoyer, Sonal Gupta (2020)
+    arXiv: https://arxiv.org/abs/2012.13255
+    Conference: ACL 2021
+    Core Concepts: Proves empirically that pretraining compresses the intrinsic 
+    dimension of downstream task optimization.
+
+--------------------------------------------------------------------------------
+5. PARAMETER-EFFICIENT FINE-TUNING (PEFT) & LORA MECHANICS
+--------------------------------------------------------------------------------
+
+[10] "LoRA: Low-Rank Adaptation of Large Language Models"
+     Authors: Edward J. Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, Weizhu Chen (2021)
+     arXiv: https://arxiv.org/abs/2106.09685
+     Conference: ICLR 2022
+     Code/Repository: https://github.com/microsoft/LoRA
+     Core Concepts: Weight update factorization Delta W = B * A, rank r selection, 
+     zero-inference latency folding, memory savings.
+
+[11] "QLoRA: Efficient Finetuning of Quantized LLMs"
+     Authors: Tim Dettmers, Artidoro Pagnoni, Ari Holtzman, Luke Zettlemoyer (2023)
+     arXiv: https://arxiv.org/abs/2305.14314
+     Conference: NeurIPS 2023
+     Code/Repository: https://github.com/artidoro/qlora
+     Core Concepts: 4-bit NormalFloat (NF4), Double Quantization, Paged Optimizers 
+     with LoRA adapters.
+
+[12] "Scaling Down to Scale Up: A Guide to Parameter-Efficient Fine-Tuning"
+     Authors: Vladislav Lialin, Vijeta Deshpande, Anna Rumshisky (2023)
+     arXiv: https://arxiv.org/abs/2303.15647
+     Core Concepts: Comprehensive taxonomy of adapter methods, prefix-tuning, and 
+     low-rank adaptations.
+
+--------------------------------------------------------------------------------
+6. SVD-DRIVEN EXTENSIONS TO LORA (ADVANCED TOPICS)
+--------------------------------------------------------------------------------
+
+[13] "PiSSA: Principal Singular Values and Singular Vectors Adaptation of Large Language Models"
+     Authors: Fanxu Meng, Zhaopeng Tu, Jiarui Fang, Yuhang Wang, Zewei Sun, Liang Ding (2024)
+     arXiv: https://arxiv.org/abs/2404.02905
+     Conference: NeurIPS 2024
+     Core Concepts: Uses SVD directly on W_0 to initialize the LoRA matrices with the 
+     principal singular components instead of random initialization.
+
+[14] "AdaLoRA: Adaptive Budget Allocation for Parameter-Efficient Fine-Tuning"
+     Authors: Qingru Zhang, Minshuo Chen, Alexander Bukharin, Pengcheng He, Yu Cheng, Weizhu Chen, Tuo Zhao (2023)
+     arXiv: https://arxiv.org/abs/2303.10512
+     Conference: ICLR 2023
+     Core Concepts: Dynamically adjusts rank r per layer using SVD-inspired 
+     importance scoring.
+
+[15] "SVFT: Parameter-Efficient Fine-Tuning with Singular Vectors"
+     Authors: Vijay Lingam, Atula Tejaswi, et al. (2024)
+     arXiv: https://arxiv.org/abs/2405.19597
+     Core Concepts: Learning scaling coefficients directly over the singular vectors 
+     of pretrained weight matrices.
+
+--------------------------------------------------------------------------------
+7. RECOMMENDED OUTLINE TO WRITE
+--------------------------------------------------------------------------------
+- Section 1: Introduction & Motivation (The curse of dimensionality vs. low-rank reality).
+- Section 2: Mathematical Foundations of SVD (Geometric mapping, spectral theorem, Gram matrices).
+- Section 3: Low-Rank Matrix Approximation (Eckart-Young-Mirsky theorem and proofs for 2-norm and Frobenius norm).
+- Section 4: Connection to PCA (Sample covariance, Rayleigh quotient, variance maximization).
+- Section 5: Intrinsic Dimensionality in Deep Learning (Aghajanyan et al. findings).
+- Section 6: LoRA Architecture & Mathematical Formulation (\Delta W = \alpha/r * B * A, gradient derivations).
+- Section 7: Modern Extensions & SVD-LoRA Synergies (PiSSA, AdaLoRA, QLoRA).
+- Section 8: Conclusion & Open Questions.

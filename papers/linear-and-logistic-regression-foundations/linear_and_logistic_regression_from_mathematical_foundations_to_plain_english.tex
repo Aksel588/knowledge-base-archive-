@@ -1,0 +1,233 @@
+\documentclass[11pt,journal,onecolumn]{IEEEtran}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{hyperref}
+
+\hypersetup{
+    pdfauthor={Aksel Aghajanyan},
+    pdftitle={The Two Pillars of Supervised Learning: An Intuitive Primer on Linear and Logistic Regression},
+    pdfsubject={Machine Learning for Beginners, Intuitive Artificial Intelligence, Data Science Fundamentals},
+    pdfkeywords={Linear Regression, Logistic Regression, Supervised Learning, Machine Learning Fundamentals, Plain English AI, Data Science},
+    pdfcreator={pdfLaTeX with hyperref},
+    colorlinks=true,
+    linkcolor=blue,
+    citecolor=blue,
+    urlcolor=blue
+}
+
+\begin{document}
+
+\title{The Two Pillars of Supervised Learning: \\ An Intuitive Primer on Linear and Logistic Regression}
+
+\author{Aksel Aghajanyan \\ \small Technical Report --- Knowledge Base Archive}
+
+\maketitle
+
+\begin{abstract}
+Machine learning textbooks often introduce Linear and Logistic Regression using intimidating matrix calculus, vectors, and proofs. In reality, the core ideas behind both algorithms are simple, elegant, and grounded in common sense. This guide explains both models using 95\% plain English, real-world analogies, and only 5\% essential math. We explore how Linear Regression predicts continuous numbers (like house prices or pizza delivery times) by finding the best-fitting line, why straight lines fail when answering simple Yes/No questions, and how Logistic Regression uses an S-shaped curve to turn numbers into honest probabilities (0\% to 100\%). By the end of this paper, any beginner will understand how these models think, learn from mistakes, and make decisions.
+\end{abstract}
+
+\section{Introduction: The Two Big Questions in Machine Learning}
+
+Every machine learning problem you encounter in the real world usually asks one of two simple questions:
+
+\begin{enumerate}
+    \item \textbf{``How much?'' or ``How many?''} \\
+    \textit{Examples:} How many dollars will this house sell for? How many minutes until the food arrives? What will the temperature be tomorrow? \\
+    $\rightarrow$ This is called \textbf{Regression}. Our answer is an ordinary continuous number.
+    
+    \item \textbf{``Which one?'' or ``Yes or No?''} \\
+    \textit{Examples:} Is this incoming email Spam or Not Spam? Will this customer cancel their subscription (Yes/No)? Is this medical test positive or negative? \\
+    $\rightarrow$ This is called \textbf{Classification}. Our answer is a category or a probability.
+\end{enumerate}
+
+To solve these two questions, data scientists turn to two trusted tools:
+\begin{itemize}
+    \item \textbf{Linear Regression} is the master tool for answering \textit{``How much?''}
+    \item \textbf{Logistic Regression} is the master tool for answering \textit{``Yes or No?''}
+\end{itemize}
+
+Let us look at each one step by step, keeping formulas to an absolute minimum.
+
+---
+
+\section{Part I: Linear Regression (Predicting a Number)}
+
+\subsection{The Everyday Analogy: Estimating Taxi Fares}
+Imagine you get into a taxi cab. Before the car even rolls an inch, the meter starts with a fixed base fare of \$3.00. Then, for every kilometer traveled, the driver adds \$2.00 to the bill.
+
+If you travel $5$ kilometers, your brain instantly calculates:
+$$\text{Cost} = \$3.00 + (\$2.00 \times 5) = \$13.00$$
+
+Without knowing it, you just performed \textbf{Linear Regression}!
+
+\subsection{The Only Formula You Need (The 5\% Math)}
+In data science, we write this exact same taxi calculation using three letters:
+\begin{equation}
+\hat{y} = w \cdot x + b
+\end{equation}
+
+Here is the entire formula translated into plain English:
+\begin{itemize}
+    \item $x$ (\textbf{The Feature}): What you already know. In our taxi ride, this is the \textit{distance} (5 km). In real estate, this might be the size of an apartment.
+    \item $w$ (\textbf{The Weight or Slope}): The \textit{multiplier knob}. It tells the computer how sensitive the outcome is to changes in $x$. For our taxi, $w = 2$ dollars per kilometer.
+    \item $b$ (\textbf{The Bias or Starting Line}): The \textit{baseline anchor}. What the prediction defaults to when $x = 0$. For our taxi, $b = 3$ dollars base fare.
+    \item $\hat{y}$ (\textbf{y-hat / The Prediction}): The computer's final estimate. The little hat on top of $y$ is data science code for: \textit{``This is a guess, not guaranteed truth.''}
+\end{itemize}
+
+If you have multiple inputs (e.g., apartment size, number of bedrooms, and distance to city center), the computer simply gives each input its own weight knob:
+$$\text{Price} = (w_1 \times \text{Size}) + (w_2 \times \text{Bedrooms}) + b$$
+
+\subsection{How Does the Computer Know if It Made a Mistake?}
+When you train a machine learning model, the computer starts with random guesses for $w$ and $b$. Naturally, its first guesses will be terrible. 
+
+To help the computer get better, we need a scorecard that measures how wrong it is. We call this the \textbf{Cost Function} (specifically, \textbf{Mean Squared Error}):
+
+\begin{equation}
+\text{Error} = (\text{Real Answer} - \text{Model Guess})^2
+\end{equation}
+
+\noindent Why do we square the error? For two very practical reasons:
+\begin{enumerate}
+    \item \textbf{No self-canceling errors:} If the model under-predicts by \$10 on house A ($-10$) and over-predicts by \$10 on house B ($+10$), adding them directly gives $(-10 + 10 = 0)$, foolishly suggesting the model is perfect! Squaring makes both numbers positive ($100 + 100 = 200$).
+    \item \textbf{Harsh punishment for huge blunders:} A small mistake of 2 becomes an error score of $4$. But an embarrassing mistake of 20 explodes into an error score of $400$. The model quickly learns to avoid reckless wild guesses.
+\end{enumerate}
+
+\subsection{How the Computer Learns: The Blindfolded Hiker}
+How does the computer adjust its knobs ($w$ and $b$) to reduce the error score? It uses a technique called \textbf{Gradient Descent}.
+
+\vspace{0.5em}
+\noindent\fbox{%
+\parbox{0.97\textwidth}{%
+\textbf{The Analogy of the Blindfolded Hiker} \\
+Imagine you are blindfolded and placed on the side of a hilly valley in thick fog. Your goal is to reach the lowest cabin at the very bottom of the valley.
+\begin{itemize}
+    \item You cannot see the cabin.
+    \item But with your feet, you can feel which direction slopes downward.
+    \item You take a careful step in the downward direction.
+    \item You pause, feel the slope again, and take another step downward.
+    \item You repeat this process over and over until the ground feels completely flat beneath your shoes. You have arrived at the lowest point!
+\end{itemize}
+}%
+}
+\vspace{0.5em}
+
+In this analogy:
+\begin{itemize}
+    \item The \textbf{valley height} is the model's error score.
+    \item The \textbf{step direction} is calculated using a little bit of calculus (the gradient).
+    \item The \textbf{step size} is called the \textbf{Learning Rate} ($\alpha$). If you take giant basketball jumps, you will overshoot the valley and crash into the other mountain. If your steps are microscopic, it will take you three weeks to reach the bottom. Finding a sensible step size makes learning fast and stable.
+\end{itemize}
+
+---
+
+\section{Part II: Why Linear Regression Fails for Yes/No Questions}
+
+Now let us try something different. Suppose we want to build a spam filter:
+\begin{itemize}
+    \item $y = 0$: Legitimate friendly email (Not Spam).
+    \item $y = 1$: Dangerous fraudulent email (Spam).
+\end{itemize}
+
+Can we just draw a straight line through the data like before? Let us see what goes wrong:
+
+\begin{figure}[htbp]
+\centering
+\fbox{\parbox{0.92\textwidth}{%
+\vspace{0.6em}
+\textbf{Thought Experiment: The Absurd Straight Line}
+\begin{itemize}
+    \item Suppose an email has 5 suspicious keywords, and our line predicts a spam probability of $0.80$ (80\% chance of spam). That sounds reasonable.
+    \item But what if an email has 50 suspicious keywords? The straight line keeps climbing upward forever: it outputs a probability of \textbf{$2.75$ (275\% chance)}!
+    \item What if an email comes from your grandmother with zero suspicious keywords? The line plunges downward: it outputs \textbf{$-0.60$ (negative 60\% chance)}!
+\end{itemize}
+\vspace{0.2em}
+}}
+\end{figure}
+
+In the real world, \textbf{probabilities must live strictly between 0\% and 100\% (0.0 and 1.0)}. A straight line does not know when to stop; it flies off to positive and negative infinity.
+
+Furthermore, if an email arrives that is ridiculously spammy (say, 500 scam links), a straight line tries so hard to reach that distant point that the whole line tilts, accidentally misclassifying all the normal emails near the middle.
+
+We need a mathematical shape that never exceeds 1 and never drops below 0.
+
+---
+
+\section{Part III: Logistic Regression (Predicting Yes or No)}
+
+\subsection{The Magic S-Curve (The Sigmoid Squasher)}
+Logistic Regression fixes the straight-line problem using an ingenious trick: it takes the straight line and feeds it through an **S-shaped curve** called the **Sigmoid Function**.
+
+\begin{equation}
+\text{Probability} = \frac{1}{1 + e^{-z}} \quad \text{where } z = w \cdot x + b
+\end{equation}
+
+Do not worry about the symbol $e$ (it is just Euler's number $\approx 2.718$). All you need to know is what this machine does: \textbf{It is a universal number squasher!}
+
+\begin{itemize}
+    \item \textbf{Input is huge positive (+100):} The sigmoid squashes it down to \textbf{0.9999... (99.9\%)}
+    \item \textbf{Input is huge negative (-100):} The sigmoid squashes it up to \textbf{0.0001... (0.01\%)}
+    \item \textbf{Input is right in the middle (0):} The sigmoid outputs exactly \textbf{0.50 (50\% coin flip)}
+\end{itemize}
+
+No matter what crazy number $w \cdot x + b$ generates, the sigmoid squashes it neatly into a safe, sensible probability between 0 and 1.
+
+\subsection{How Does Logistic Regression Measure Mistakes? (The Lie Detector)}
+If someone asks you: \textit{``Will it rain tomorrow?''}
+\begin{itemize}
+    \item If you answer \textit{``I think there is a 55\% chance of rain,''} and it stays sunny, you were slightly off, but you were cautious. Small penalty.
+    \item But if you shout \textit{``I am 99.99\% certain it will pour!''} and the sky is completely clear and dry, you were \textbf{confidently wrong}. Big penalty!
+\end{itemize}
+
+Logistic Regression uses an error score called \textbf{Binary Cross-Entropy} (or \textbf{Log Loss}) that acts just like this lie detector:
+\begin{itemize}
+    \item If the truth is **1** and you guess **0.99**: Error $\approx 0$ (Reward for being right).
+    \item If the truth is **1** and you guess **0.50**: Error is medium (Hesitant guess).
+    \item If the truth is **1** and you guess **0.01**: Error is near infinity (Huge penalty for stubborn confidence).
+\end{itemize}
+
+This forces the model to be calibrated and honest about its confidence.
+
+\subsection{The Decision Threshold: Drawing the Line}
+Once the model outputs a probability (e.g., \textit{``There is an 84\% chance this email is spam''}), how do we make a final decision?
+
+We set a simple cutoff threshold (usually \textbf{50\%} or $0.5$):
+\begin{itemize}
+    \item If Probability $\geq 0.5 \implies$ \textbf{Mark as Spam (Class 1)}
+    \item If Probability $< 0.5 \implies$ \textbf{Send to Inbox (Class 0)}
+\end{itemize}
+
+You can even adjust this threshold based on real-world stakes:
+\begin{itemize}
+    \item For a medical cancer screening, you want to be extra safe: if probability $\geq 0.20$ (20\%), flag for further tests!
+    \item For a spam filter, you don't want to accidentally delete an important bank email: you might only delete if probability $\geq 0.90$ (90\%).
+\end{itemize}
+
+---
+
+\section{Part IV: Direct Side-by-Side Comparison}
+
+Here is everything you need to remember in one simple table:
+
+\begin{table}[htbp]
+\centering
+\caption{Linear Regression vs. Logistic Regression in Plain English}
+\label{tab:beginner_comparison}
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Feature} & \textbf{Linear Regression} & \textbf{Logistic Regression} \\
+\midrule
+\textbf{The Big Question} & ``How much?'' (Price, Height, Time) & ``Yes or No?'' (Spam, Churn, Disease) \\
+\textbf{Output Type} & Any real number ($-\infty$ to $+\infty$) & A probability strictly between 0 and 1 \\
+\textbf{The Shape} & A straight diagonal line & An S-shaped curved wave (Sigmoid) \\
+\textbf{Mistake Metric} & Squared Distance (Mean Squared Error) & Confidence Penalty (Log Loss) \\
+\textbf{Key Weakness} & Vulnerable to extreme outliers & Cannot easily model twisty zigzag boundaries \\
+\textbf{Analogy} & Estimating a taxi fare with a meter & A doctor guessing chances of recovery \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\end{document}
