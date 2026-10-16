@@ -27,7 +27,7 @@
 \maketitle
 
 \begin{abstract}
-Support Vector Machines (SVMs) are one of the most elegant algorithms in classical machine learning. While many classifiers simply look for \textit{any} line that separates two groups of points, an SVM searches for the \textit{best} line --- the one that leaves the widest possible empty street between the two classes. This guide explains the core geometric idea using everyday analogies (streets, fences, and balloons), shows why only a handful of points actually matter, and briefly introduces the famous kernel trick that lets SVMs handle curved boundaries without ever leaving the comfort of linear mathematics. By the end, the maximum-margin principle should feel intuitive rather than mysterious.
+Support Vector Machines (SVMs) are one of the most elegant algorithms in classical machine learning. While many classifiers simply look for \textit{any} line that separates two groups of points, an SVM searches for the \textit{best} line — the one that leaves the widest possible empty street between the two classes. This guide explains the core geometric idea using everyday analogies (streets, sidewalks, and balloons), shows why only a handful of points actually matter, and briefly introduces the famous kernel trick that lets SVMs handle curved boundaries without ever leaving the comfort of linear mathematics. By the end, the maximum-margin principle should feel intuitive rather than mysterious.
 \end{abstract}
 
 \section{Introduction: Many Lines Can Separate, Only One Is Optimal}
@@ -112,9 +112,9 @@ Sometimes a straight street is not enough; the boundary needs to curve. The kern
 
 The most common kernels are:
 \begin{itemize}
-    \item \textbf{Linear} --- ordinary straight street.
-    \item \textbf{Polynomial} --- gentle curves.
-    \item \textbf{Radial Basis Function (RBF)} --- flexible, localized “bubbles” of influence around each support vector.
+    \item \textbf{Linear} — ordinary straight street.
+    \item \textbf{Polynomial} — gentle curves.
+    \item \textbf{Radial Basis Function (RBF)} — flexible, localized “bubbles” of influence around each support vector.
 \end{itemize}
 
 The beautiful part is that all of the heavy lifting is still done by the same maximum-margin math; the kernel merely changes how distances between points are measured.
