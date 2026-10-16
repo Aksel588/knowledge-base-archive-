@@ -8,9 +8,9 @@
 
 \hypersetup{
     pdfauthor={Aksel Aghajanyan},
-    pdftitle={Finding the Widest Street: An Intuitive Primer on Support Vector Machines},
-    pdfsubject={Machine Learning for Beginners, Classical Machine Learning, Geometric Classification},
-    pdfkeywords={Support Vector Machines, SVM, Maximum Margin, Hard-Margin Classifier, Kernel Trick, Classical Machine Learning},
+    pdftitle={Finding the Widest Street: The Definitive Step-by-Step Primer on Support Vector Machines},
+    pdfsubject={Support Vector Machines, Maximum Margin Classifiers, Classical Machine Learning, Geometric Learning},
+    pdfkeywords={Support Vector Machines, SVM, Maximum Margin, Soft-Margin, Kernel Trick, Support Vectors, Classical Machine Learning},
     pdfcreator={pdfLaTeX with hyperref},
     colorlinks=true,
     linkcolor=blue,
@@ -20,38 +20,44 @@
 
 \begin{document}
 
-\title{Finding the Widest Street: \\ An Intuitive Primer on Support Vector Machines}
+\title{Finding the Widest Street: \\\\ The Definitive Step-by-Step Primer on Support Vector Machines}
 
-\author{Aksel Aghajanyan \\ \small Technical Report --- Knowledge Base Archive}
+\author{Aksel Aghajanyan \\\\ \small Technical Report --- Knowledge Base Archive}
 
 \maketitle
 
 \begin{abstract}
-Support Vector Machines (SVMs) are one of the most elegant algorithms in classical machine learning. While many classifiers simply look for \textit{any} line that separates two groups of points, an SVM searches for the \textit{best} line — the one that leaves the widest possible empty street between the two classes. This guide explains the core geometric idea using everyday analogies (streets, sidewalks, and balloons), shows why only a handful of points actually matter, and briefly introduces the famous kernel trick that lets SVMs handle curved boundaries without ever leaving the comfort of linear mathematics. By the end, the maximum-margin principle should feel intuitive rather than mysterious.
+Support Vector Machines (SVMs) are one of the most elegant and geometrically pure algorithms in classical machine learning. While many classifiers simply hunt for \textit{any} line that separates two groups of points, an SVM searches for the \textit{best} line --- the one that leaves the widest possible empty street between the two classes. This technical report provides a comprehensive, ground-up, and accessible exposition of SVMs. Written in 95\% plain, structured English and 5\% foundational mathematics, this guide dismantles the black box of maximum-margin classification. We trace the street-and-sidewalk analogy from first principles, explain why only a handful of points actually matter, introduce soft margins for messy real-world data, and demystify the famous kernel trick that lets SVMs handle curved boundaries without ever leaving the comfort of linear mathematics. By the end, the maximum-margin principle should feel intuitive rather than mysterious.
 \end{abstract}
 
-\section{Introduction: Many Lines Can Separate, Only One Is Optimal}
+---
 
-Imagine you have two groups of points on a table:
+\section{Introduction: Many Lines Can Separate, Only One Is Optimal}
+\label{sec:intro}
+
+Imagine you have two groups of points scattered on a table:
 \begin{itemize}
     \item Red points on the left (Class A).
     \item Blue points on the right (Class B).
 \end{itemize}
 
-You want to draw a straight line that keeps all red points on one side and all blue points on the other. Many different lines will do the job. Some will pass very close to the points; others will leave more breathing room.
+You want to draw a straight line that keeps every red point on one side and every blue point on the other. Many different lines will do the job. Some will pass very close to the points; others will leave more breathing room.
 
 Which line should we choose?
 
-A Support Vector Machine answers this question with a clear principle:
+A Support Vector Machine answers this question with a clear, geometric principle:
 \begin{quote}
 \textit{Choose the line that maximizes the empty margin on both sides.}
 \end{quote}
 
 In other words, find the widest possible street that still keeps the two classes on opposite sidewalks. The points that touch the edges of this street are called \textbf{support vectors}. Everything else can be ignored.
 
-This geometric criterion is the heart of the classic hard-margin SVM.
+This geometric criterion is the heart of the classic hard-margin SVM. Once you see the problem as ``find the widest safe street,'' the mathematics of maximizing the margin becomes a natural consequence rather than an arbitrary optimization target.
 
-\section{The Street Analogy}
+---
+
+\section{The Street Analogy: Building Intuition from First Principles}
+\label{sec:analogy}
 
 Picture a city street running between two neighborhoods:
 \begin{itemize}
@@ -61,22 +67,26 @@ Picture a city street running between two neighborhoods:
 
 You want the street to be as wide as possible so that cars (new data points) can drive safely without hitting either sidewalk. The center line of the street is the decision boundary. The distance from the center line to either sidewalk is the \textbf{margin}.
 
-\begin{figure}[htbp]
-\centering
-\fbox{\parbox{0.92\textwidth}{%
-\vspace{0.6em}
-\textbf{Key Geometric Facts}
+\vspace{0.3em}
+\noindent\fbox{%
+\parbox{0.97\textwidth}{%
+\textbf{Key Geometric Facts} \\
 \begin{itemize}
     \item The decision boundary is the center of the street.
     \item The margin is half the width of the street.
     \item Only the points that lie exactly on the sidewalks (the support vectors) determine the street’s width and direction.
     \item Moving any other point farther away does not change the solution.
 \end{itemize}
-\vspace{0.2em}
-}}
-\end{figure}
+}%
+}
+\vspace{0.3em}
+
+This simple picture captures the entire philosophy of the hard-margin SVM. The algorithm does not care about points that are already safely far from the boundary. It only cares about the points that are closest --- the ones that constrain how wide the street can be.
+
+---
 
 \section{The Only Math You Need (The 5\%)}
+\label{sec:math}
 
 For a hard-margin SVM that perfectly separates two classes, we look for a hyperplane defined by a weight vector $\mathbf{w}$ and a bias $b$ such that:
 \begin{equation}
@@ -96,30 +106,73 @@ In plain English:
 
 Only the points that end up exactly on the sidewalks (where the inequality becomes equality) are the support vectors. All other points are irrelevant for determining the final boundary.
 
+\vspace{0.3em}
+\noindent\fbox{%
+\parbox{0.97\textwidth}{%
+\textbf{Why Minimize $\|\mathbf{w}\|$?} \\
+Think of $\|\mathbf{w}\|$ as a measure of how steep the decision surface is. A large $\|\mathbf{w}\|$ means a steep slope and a narrow street. A small $\|\mathbf{w}\|$ means a gentle slope and a wide street. The optimization simply looks for the gentlest slope that still keeps every point on the correct sidewalk.
+}%
+}
+
+---
+
 \section{Why Support Vectors Are Special}
+\label{sec:support}
 
 Suppose you have 1,000 training points, but only 5 of them lie on the edges of the optimal street. Those 5 points completely define the solution. You could delete the other 995 points and the SVM would draw exactly the same street.
 
 This is a striking property: the model’s memory is compressed into a tiny subset of the data. In practice this also makes SVMs relatively robust to noise that lies far from the boundary.
 
+\vspace{0.3em}
+\noindent\fbox{%
+\parbox{0.97\textwidth}{%
+\textbf{The Support Vector Principle} \\
+\textit{The decision boundary is completely determined by the points that sit on the margin. All other points are spectators.}
+}%
+}
+
+---
+
 \section{What Happens When the Data Are Not Perfectly Separable?}
+\label{sec:soft}
 
 Real data are rarely clean. A few points may sit on the wrong side of any straight line. Soft-margin SVMs relax the hard constraints by allowing a small number of mistakes (controlled by a penalty parameter $C$). The geometric intuition remains the same: still look for a wide street, but now tolerate a few houses that stick slightly into the roadway.
 
+\begin{itemize}
+    \item A large $C$ means you hate mistakes --- the street stays wide but a few points may be ignored.
+    \item A small $C$ means you are willing to let the street narrow a little to accommodate almost every point.
+\end{itemize}
+
+The soft-margin formulation keeps the same core philosophy while making the algorithm practical for noisy real-world datasets.
+
+---
+
 \section{The Kernel Trick (A Glimpse)}
+\label{sec:kernel}
 
 Sometimes a straight street is not enough; the boundary needs to curve. The kernel trick lets an SVM act as if it has lifted the points into a higher-dimensional space where a straight street becomes possible, without ever explicitly computing the coordinates in that space.
 
 The most common kernels are:
 \begin{itemize}
-    \item \textbf{Linear} — ordinary straight street.
-    \item \textbf{Polynomial} — gentle curves.
-    \item \textbf{Radial Basis Function (RBF)} — flexible, localized “bubbles” of influence around each support vector.
+    \item \textbf{Linear} --- ordinary straight street.
+    \item \textbf{Polynomial} --- gentle curves.
+    \item \textbf{Radial Basis Function (RBF)} --- flexible, localized “bubbles” of influence around each support vector.
 \end{itemize}
 
 The beautiful part is that all of the heavy lifting is still done by the same maximum-margin math; the kernel merely changes how distances between points are measured.
 
+\vspace{0.3em}
+\noindent\fbox{%
+\parbox{0.97\textwidth}{%
+\textbf{Intuition for the Kernel Trick} \\
+Imagine the points are lights on a flat table. If they are not linearly separable, you can gently bend the table into a curved surface until a straight cut becomes possible. The kernel lets the SVM perform this bending in its head without ever building the curved surface explicitly.
+}%
+}
+
+---
+
 \section{Side-by-Side Comparison with Earlier Models}
+\label{sec:comparison}
 
 \begin{table}[htbp]
 \centering
@@ -138,7 +191,10 @@ The beautiful part is that all of the heavy lifting is still done by the same ma
 \end{tabular}
 \end{table}
 
+---
+
 \section{When to Prefer an SVM}
+\label{sec:when}
 
 SVMs shine when:
 \begin{itemize}
@@ -149,7 +205,10 @@ SVMs shine when:
 
 They are less convenient when you need well-calibrated probabilities out of the box (logistic regression is simpler for that) or when the dataset is enormous (training can become slow).
 
+---
+
 \section{Conclusion}
+\label{sec:conclusion}
 
 The central insight of the Support Vector Machine is refreshingly geometric: among all lines that separate two classes, choose the one that leaves the widest empty street. Only the points that touch the edges of that street matter. Everything else is decoration.
 
